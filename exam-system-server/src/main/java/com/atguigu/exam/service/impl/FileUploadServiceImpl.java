@@ -67,11 +67,11 @@ public class FileUploadServiceImpl implements FileUploadService {
         minioClient.putObject(PutObjectArgs.builder()
                         .bucket(minioProperties.getBucketName())
                         .contentType(file.getContentType())
-                        .object(objectName) //对象
+                        .object(objectName) //文件在桶中的对象名
                         .stream(file.getInputStream(),file.getSize(),-1) //-1 我们不指定文件切割大小！让minio自动处理！
                 .build());
 
-        //5. 拼接回显地址 【端点 + 桶 + 对象名】
+        //5. 拼接回显地址 【端点 + 桶 + 对象名】，delimiter是分隔符
         String url = String.join("/", minioProperties.getEndpoint(), minioProperties.getBucketName(), objectName);
         log.info("文件上传核心业务，完成{}文件上传，返回地址为：{}",objectName,url);
         return url;
