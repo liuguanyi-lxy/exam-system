@@ -7,10 +7,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * projectName: com.atguigu.exam.config
+ * Knife4j API文档配置类
+ * 用于配置智能考试系统的API文档分组和基本信息
+ * 通过SpringDoc OpenAPI实现接口文档的自动生成和管理
  *
- * @author: 赵伟风
- * description:
+ * @author 赵伟风
+ * @version 1.0
  */
 @Configuration
 public class Knife4jConfiguration {
@@ -39,7 +41,12 @@ public class Knife4jConfiguration {
     }
 
 
-    //1.用户管理两套结构 【实现】
+    /**
+     * 配置用户信息管理API分组
+     * 包含用户相关的接口文档，如用户注册、登录、信息查询等功能
+     *
+     * @return 用户信息管理的GroupedOpenApi对象
+     */
     @Bean
     public GroupedOpenApi userAPI() {
 
@@ -50,7 +57,12 @@ public class Knife4jConfiguration {
                 build();
     }
 
-    //2.试题信息管理5+16 = 21套接口 【实现】
+    /**
+     * 配置试题信息管理API分组
+     * 包含题目分类管理和题目管理的接口文档，支持选择题、判断题、简答题等多种题型
+     *
+     * @return 试题信息管理的GroupedOpenApi对象
+     */
     @Bean
     public GroupedOpenApi questionsAPI() {
 
@@ -64,7 +76,12 @@ public class Knife4jConfiguration {
 
 
 
-    //3.试卷信息管理7+5+4=16套接口 【实现】
+    /**
+     * 配置考试信息管理API分组
+     * 包含试卷管理、考试管理和考试记录管理的接口文档，支持手动组卷和AI智能组卷功能
+     *
+     * @return 考试信息管理的GroupedOpenApi对象
+     */
     @Bean
     public GroupedOpenApi papersAPI() {
 
@@ -77,7 +94,12 @@ public class Knife4jConfiguration {
                 build();
     }
 
-    //4.视频信息管理（管理端视频，客户端视频，视频分类）8+7+7=22套接口 【不实现】
+    /**
+     * 配置视频信息管理API分组
+     * 包含管理端视频、客户端视频和视频分类管理的接口文档（预留配置，暂未实现）
+     *
+     * @return 视频信息管理的GroupedOpenApi对象
+     */
     @Bean
     public GroupedOpenApi videosAPI() {
 
@@ -91,7 +113,12 @@ public class Knife4jConfiguration {
     }
 
 
-    //5.系统信息管理（视频和轮播图）十六套接口 【实现轮播图，讲解文件上传】
+    /**
+     * 配置系统信息管理API分组
+     * 包含轮播图管理和公告管理的接口文档，支持文件上传功能
+     *
+     * @return 系统信息管理的GroupedOpenApi对象
+     */
     @Bean
     public GroupedOpenApi systemAPI() {
 
@@ -104,7 +131,12 @@ public class Knife4jConfiguration {
     }
 
 
-    //6.其他信息管理（数据统计，文件查询，debug）四套接口 【实现文件查询】
+    /**
+     * 配置其他内容管理API分组
+     * 包含数据统计、文件查询和调试接口的文档（部分功能预留，暂未实现）
+     *
+     * @return 其他内容管理的GroupedOpenApi对象
+     */
     @Bean
     public GroupedOpenApi otherAPI() {
 

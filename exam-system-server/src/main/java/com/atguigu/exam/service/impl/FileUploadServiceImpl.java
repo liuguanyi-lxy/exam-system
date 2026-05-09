@@ -13,10 +13,12 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * projectName: com.atguigu.exam.service.impl
+ * 文件上传服务实现类
+ * 基于MinIO对象存储服务实现文件上传功能，支持轮播图、视频等各类文件的上传和管理
+ * 自动处理桶创建、访问权限配置、文件名唯一性保证等核心逻辑
  *
- * @author: 赵伟风
- * description:
+ * @author 赵伟风
+ * @version 1.0
  */
 @Service
 @Slf4j
@@ -24,17 +26,28 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Autowired
     private MinioClient minioClient;
+    
     @Autowired
     private MinioProperties minioProperties;
 
+    /**
+     * 上传文件到MinIO对象存储
+     * 自动检查并创建存储桶，设置公共读权限，生成唯一的对象名称以避免文件覆盖
+     *
+     * @param folder 文件夹名称，用于区分不同类型的文件（如banner、video等）
+     * @param file 要上传的文件对象，包含文件内容和元数据
+     * @return 文件的完整访问URL，格式为：端点/桶名/文件夹/日期/UUID_原文件名
+     * @throws Exception 文件上传过程中可能出现的异常，如IO异常、MinIO连接异常等
+     */
     @Override
     public String uploadFile(String folder, MultipartFile file) throws Exception {
-        //1. 判断桶是否存在
+        // 检查存储桶是否存在，不存在则创建并设置公共读访问策略
         boolean bucketExists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(minioProperties.getBucketName()).build());
         //2. 不存在，创建桶，同时设置访问权限
         if (!bucketExists) {
             //创建桶
             minioClient.makeBucket(MakeBucketArgs.builder().bucket(minioProperties.getBucketName()).build());
+            //通过formatted方法将minioProperties中的桶名动态填入资源路径，生成针对特定存储桶的公共读权限配置字符串，用于后续设置桶策略
             String config = """
                         {
                               "Statement" : [ {
@@ -45,33 +58,29 @@ public class FileUploadServiceImpl implements FileUploadService {
                               } ],
                               "Version" : "2012-10-17"
                         }
-                    """.formatted(minioProperties.getBucketName());
+                    """.formatted(minioProperties.getBucketName());//桶名替代资源访问路径的%s参数
+            //给指定的桶设置访问权限
             minioClient.setBucketPolicy(SetBucketPolicyArgs.builder()
                             .bucket(minioProperties.getBucketName())
                             .config(config)
                     .build());
         }
-        //3. 处理上传的对象名（影响，minio桶中的文件结构！）
-        //现在： exam0625 / folder / ai.png  缺点： 所有文件都平铺（banner，video）不好区分！ 核心缺点，可能覆盖！
-        //小知识点： x/x/x.png -> exam0625 /x/x/ x.png
-        //解决覆盖问题： 确保对象和文件的名字唯一即可！！ uuid - - -
-        //1.需要添加文件夹 2.添加uuid确保不重复
+        
+        // 生成唯一的对象名称：文件夹/日期/UUID_原文件名，避免文件覆盖
         String objectName = folder + "/" + new SimpleDateFormat("yyyyMMdd").format(new Date()) + "/" +
                 UUID.randomUUID().toString().replaceAll("-","")+"_"+ file.getOriginalFilename();
 
         log.debug("文件上传核心业务方法，处理后的文件对象名：{}",objectName);
 
-        //4. 上传文件 putObject方法
-        //putObject . 上传文件数据 .steam(文件输入流)
-        //uploadObject .上传文件数据 .filename(文件的磁盘地址 c:\\)
+        // 执行文件上传，使用流式上传方式，由MinIO自动处理分片
         minioClient.putObject(PutObjectArgs.builder()
                         .bucket(minioProperties.getBucketName())
                         .contentType(file.getContentType())
-                        .object(objectName) //文件在桶中的对象名
-                        .stream(file.getInputStream(),file.getSize(),-1) //-1 我们不指定文件切割大小！让minio自动处理！
+                        .object(objectName)//桶中对象名
+                        .stream(file.getInputStream(),file.getSize(),-1)
                 .build());
 
-        //5. 拼接回显地址 【端点 + 桶 + 对象名】，delimiter是分隔符
+        // 拼接完整的文件访问URL并返回
         String url = String.join("/", minioProperties.getEndpoint(), minioProperties.getBucketName(), objectName);
         log.info("文件上传核心业务，完成{}文件上传，返回地址为：{}",objectName,url);
         return url;

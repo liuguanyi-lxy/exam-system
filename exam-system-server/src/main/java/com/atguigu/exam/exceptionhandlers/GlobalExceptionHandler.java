@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * projectName: day23_exam-system-server
  *
- * @author: 赵伟风
+ * @author: 龙星宇
  * description: 全局异常处理器，用于统一捕获和处理系统中未处理的异常，
  * 确保所有异常都能以标准化的格式返回给前端。
  */
@@ -114,7 +114,8 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public Result exception(Exception e) {
-        log.error("服务器发生运行时异常！异常信息为：{}",e.getMessage());
-        return Result.error(e.getMessage());
+        log.error("服务器发生运行时异常！", e);
+        e.getStackTrace();
+        return Result.error(e.getMessage() != null ? e.getMessage() : "服务器内部错误");
     }
 }
