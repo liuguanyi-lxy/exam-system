@@ -1,15 +1,28 @@
+# 服务器配置部分
 server:
   port: 8080 #端口号要根据前端request.js对应
-
+# 日志配置部分
+logging:
+  level:
+    root: info
+# Spring框架配置部分
 spring:
+  # Jackson日期格式化配置
   jackson:
-    date-format: yyyy-MM-dd HH:mm:ss
-    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss  # 日期格式
+    time-zone: GMT+8  # 时区设置
+  # Redis数据库配置
+  data:
+    redis:
+      host: REDACTED_LAN_IP  # Redis服务器地址
+      port: 6379  # Redis服务器端口
+  # 数据源配置
   datasource:
-    type: com.zaxxer.hikari.HikariDataSource
-    url: jdbc:mysql:///exam_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8
-    username: root
-    password: 112804
+    type: com.zaxxer.hikari.HikariDataSource  # 使用HikariCP作为数据源实现
+    url: jdbc:mysql:///exam_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8  # 数据库连接URL
+    username: root  # 数据库用户名
+    password: 112804  # 数据库密码
+    # Hikari连接池配置
     hikari:
       connection-test-query: SELECT 1 # 自动检测连接
       connection-timeout: 60000 #数据库连接超时时间,默认30秒
@@ -18,16 +31,21 @@ spring:
       maximum-pool-size: 12 #连接池最大连接数，默认是10
       minimum-idle: 10 #最小空闲连接数量
       pool-name: SPHHikariPool # 连接池名称
+  # 文件上传配置
   servlet:
     multipart:
-      max-request-size: 150MB
-      max-file-size: 100MB
+      max-request-size: 150MB  # 最大请求大小
+      max-file-size: 100MB  # 最大文件大小
 
+# MyBatis-Plus配置
 #用于打印框架生成的sql语句，便于调试
 mybatis-plus:
   configuration:
+    # 配置日志实现类为标准输出实现，用于打印SQL语句
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 开启自动驼峰命名规则映射，即从数据库下划线命名到Java驼峰命名的自动转换
     auto-map-underscore-to-camel-case: true
+    # 设置自动映射行为为full，表示自动映射所有列
     auto-mapping-behavior: full
 
 # minio的配置

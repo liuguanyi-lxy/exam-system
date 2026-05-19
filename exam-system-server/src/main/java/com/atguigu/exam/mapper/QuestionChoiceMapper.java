@@ -8,4 +8,5 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * 题目选项
  */
 public interface QuestionChoiceMapper extends BaseMapper<QuestionChoice> {
+
 } 

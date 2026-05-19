@@ -1,7 +1,11 @@
 package com.atguigu.exam.service;
 
 import com.atguigu.exam.entity.Question;
+import com.atguigu.exam.vo.QuestionPageVo;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+
+import java.util.List;
 
 /**
  * 题目业务服务接口 - 定义题目相关的业务逻辑
@@ -28,5 +32,20 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface QuestionService extends IService<Question> {
 
+    /**
+     * 自定义分页查询题目
+     * @param questionPage 分页对象
+     * @param questionPageVo 查询条件
+     */
+    void customPageQuery(Page<Question> questionPage, QuestionPageVo questionPageVo);
+    // 自定义根据ID详情查询题目
+    Question customDetailQuestion(Long id);
+    // 自定义保存题目信息
+    void customSaveQuestion(Question question);
+    // 自定义更新题目信息
+    void customUpdateQuestion(Question question);
+    // 自定义根据ID删除题目
+    void customRemoveQuestionById(Long id);
 
-} 
+    List<Question> customFindPopularQuestions(Integer size);
+}

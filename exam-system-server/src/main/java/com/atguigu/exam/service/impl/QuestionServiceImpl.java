@@ -1,11 +1,29 @@
 package com.atguigu.exam.service.impl;
 
+import com.atguigu.exam.common.CacheConstants;
+import com.atguigu.exam.entity.PaperQuestion;
 import com.atguigu.exam.entity.Question;
+import com.atguigu.exam.entity.QuestionAnswer;
+import com.atguigu.exam.entity.QuestionChoice;
+import com.atguigu.exam.mapper.PaperQuestionMapper;
+import com.atguigu.exam.mapper.QuestionAnswerMapper;
+import com.atguigu.exam.mapper.QuestionChoiceMapper;
 import com.atguigu.exam.mapper.QuestionMapper;
 import com.atguigu.exam.service.QuestionService;
+import com.atguigu.exam.utils.RedisUtils;
+import com.atguigu.exam.vo.QuestionPageVo;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.ObjectUtils;
+
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 题目Service实现类
@@ -14,6 +32,266 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> implements QuestionService {
-    
+    @Autowired
+    private QuestionChoiceMapper questionChoiceMapper;
+    @Autowired
+    private QuestionAnswerMapper questionAnswerMapper;
+    @Autowired
+    private QuestionMapper questionMapper;
+    @Autowired
+    private RedisUtils redisUtils;
+    @Autowired
+    private PaperQuestionMapper paperQuestionMapper;
+    // 自定义分页查询
+    @Override
+    public void customPageQuery(Page<Question> questionPage, QuestionPageVo questionPageVo) {
+        // 构建查询条件
+        LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        //调用ObjectUtils工具类的isEmpty方法，判断传入的QuestionPageVo对象中的属性值是否为空，不为空才添加到查询条件中
+        boolean hasCategoryId = !ObjectUtils.isEmpty(questionPageVo.getCategoryId());
+        boolean hasDifficulty = !ObjectUtils.isEmpty(questionPageVo.getDifficulty());
+        boolean hasType = !ObjectUtils.isEmpty(questionPageVo.getType());
+        boolean hasKeyword = !ObjectUtils.isEmpty(questionPageVo.getKeyword());
+        // 根据传入的参数，添加查询条件
+        questionLambdaQueryWrapper.eq(hasCategoryId, Question::getCategoryId, questionPageVo.getCategoryId());
+        questionLambdaQueryWrapper.eq(hasDifficulty, Question::getDifficulty, questionPageVo.getDifficulty());
+        questionLambdaQueryWrapper.eq(hasType, Question::getType, questionPageVo.getType());
+        questionLambdaQueryWrapper.like(hasKeyword, Question::getTitle, questionPageVo.getKeyword());
+        //多条件分页查询结果要按照时间倒序排序，优先显示最近创建的题目
+        questionLambdaQueryWrapper.orderByDesc(Question::getCreateTime);
+        //根据分页条件和筛选条件进行分页查询
+        page(questionPage, questionLambdaQueryWrapper);
+        //查询结果question列表会添加到questionPage对象中，然后再进行question对象中选项和答案属性的填充
+        List<Question> questionList = questionPage.getRecords();
+        fillQuestionChoiceAndAnswer(questionList);
+    }
 
-} 
+    @Override
+    public Question customDetailQuestion(Long id) {
+        //查询题目详情
+        Question question = questionMapper.customGetById(id);
+        if(question== null){
+            throw new RuntimeException("查询题目详情失败,题目可能被提前删除");
+        }
+        //查询题目详情一次就需要对其进行一次热题更新，根据访问题目次数进行排序
+// 创建一个新的线程并启动
+        /*不阻塞主流程
+        用户查询题目详情是主要需求，必须快速返回
+        更新访问次数是辅助功能（用于热门题目排序），可以后台慢慢执行
+        如果同步执行，Redis 操作的网络延迟会影响接口响应时间*/
+        new Thread(() -> {
+    // 调用incrementQuestion方法，传入id参数
+            incrementQuestion(id);
+        }).start();
+        return question;
+    }
+    @Transactional(rollbackFor = Exception.class)
+    //自定义保存题目
+    @Override
+    public void customSaveQuestion(Question question) {
+        //插入前端传入的题目信息
+        //同一类型下的题目名称不应该相同
+        LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        questionLambdaQueryWrapper.eq(Question::getTitle, question.getTitle());
+        questionLambdaQueryWrapper.eq(Question::getType, question.getType());
+        boolean exists = exists(questionLambdaQueryWrapper);
+        if (exists) {
+            throw new RuntimeException("在%s下，存在%s 名称的题目！保存失败！".formatted(question.getType(), question.getTitle()));
+        }
+        boolean save = save(question);
+        if (!save) {//保存失败
+            throw new RuntimeException("在%s下，存在%s 名称的题目！保存失败！".formatted(question.getType(), question.getTitle()));
+        }
+        //根据题目对象获取答案对象，并且设置保存题目后回显的id
+        QuestionAnswer answer = question.getAnswer();
+        answer.setQuestionId(question.getId());
+        //判断题目是否为判断题，决定是否添加选项对象到选项表
+        if ("CHOICE".equals(question.getType())) {
+            List<QuestionChoice> choices = question.getChoices();
+            //选项答案字符串
+            StringBuilder sb = new StringBuilder();
+            //对选项列表进行循环，获取其中的选项对象，然后设置选项对应的题目ID，再调用questionCHOICEMapper的insert方法进行保存
+            //并且对每个选项的isCorrect属性进行判断，如果为true，则对答案字符串进行拼接
+            for (int i = 0; i < choices.size(); i++) {
+                QuestionChoice questionChoice = choices.get(i);
+                // 清除ID，让数据库自动生成新的ID
+                questionChoice.setId(null);
+                questionChoice.setQuestionId(question.getId());
+                questionChoice.setSort(i);
+                questionChoiceMapper.insert(questionChoice);
+                if(questionChoice.getIsCorrect()){
+                    if (sb.length() > 0) {
+                        sb.append(",");
+                    }
+                    //答案拼接
+                    sb.append((char)('A'+i));
+                }
+            }
+            answer.setAnswer(sb.toString());
+        }
+        //保存答案对象
+        questionAnswerMapper.insert(answer);
+    }
+    //自定义修改题目及其答案选项信息
+    @Override
+    @Transactional
+    public void customUpdateQuestion(Question question) {
+        //题目的校验,题目不同id名称不能相同
+        LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        questionLambdaQueryWrapper.eq(Question::getTitle, question.getTitle());
+        questionLambdaQueryWrapper.ne(Question::getId, question.getId());
+        boolean exists = exists(questionLambdaQueryWrapper);
+        if (exists) {
+            throw new RuntimeException("在%s下,存在%s名称的题目！修改失败！".formatted(question.getType(), question.getTitle()));
+        }
+        //保存题目信息
+        boolean update = updateById(question);
+        if (!update) {
+            throw new RuntimeException("题目%s修改失败！".formatted(question.getTitle()));
+        }
+        //保存答案信息
+        QuestionAnswer answer = question.getAnswer();
+        //判断题目是否为选择题，如果是，则对选项进行保存
+        if ("CHOICE".equals(question.getType())) {
+            List<QuestionChoice> choices = question.getChoices();
+            //根据题目ID删除该题目下的所有原选项
+            LambdaQueryWrapper<QuestionChoice> questionChoiceLambdaQueryWrapper = new LambdaQueryWrapper<>();
+            questionChoiceLambdaQueryWrapper.eq(QuestionChoice::getQuestionId, question.getId());
+            questionChoiceMapper.delete(questionChoiceLambdaQueryWrapper);
+            //选项答案字符串
+            StringBuilder sb = new StringBuilder();
+            //对选项列表进行循环，获取其中的选项对象，然后设置选项对应的题目ID，再调用questionCHOICEMapper的insert方法进行保存
+            //并且对每个选项的isCorrect属性进行判断，如果为true,则对答案字符串进行拼接
+            for (int i = 0; i < choices.size(); i++) {
+                QuestionChoice questionChoice = choices.get(i);
+                // 清除ID，让数据库自动生成新的ID
+                questionChoice.setId(null);
+                questionChoice.setQuestionId(question.getId());
+                questionChoice.setSort(i);
+                questionChoiceMapper.insert(questionChoice);
+                if(questionChoice.getIsCorrect()){
+                    if (sb.length() > 0) {
+                        sb.append(",");
+                    }
+                    //答案拼接
+                    sb.append((char)('A'+i));
+                }
+
+            answer.setAnswer(sb.toString());
+
+        //保存答案对象
+        answer.setQuestionId(question.getId());
+        questionAnswerMapper.updateById(answer);
+            }
+        }
+    }
+    //自定义删除题目信息
+    @Override
+    @Transactional
+    public void customRemoveQuestionById(Long id) {
+        //判断试卷题目关联表，存在题目则删除失败
+        LambdaQueryWrapper<PaperQuestion> paperQuestionLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        paperQuestionLambdaQueryWrapper.eq(PaperQuestion::getQuestionId, id);
+        boolean exists = paperQuestionMapper.exists(paperQuestionLambdaQueryWrapper);
+        if (exists) {
+            throw new RuntimeException("该题目已被试卷引用，删除失败！");
+        }
+        //删除题目
+        boolean remove = removeById(id);
+        if (!remove) {
+            throw new RuntimeException("题目ID为%s删除失败！".formatted(id));
+        }
+        //删除子表答案和选项,根据题目ID删除
+        questionAnswerMapper.delete(new LambdaQueryWrapper<QuestionAnswer>().eq(QuestionAnswer::getQuestionId, id));
+        questionChoiceMapper.delete(new LambdaQueryWrapper<QuestionChoice>().eq(QuestionChoice::getQuestionId, id));
+    }
+    //自定义查询热门题目列表
+    @Override
+    public List<Question> customFindPopularQuestions(Integer size) {
+        //定义热门题目集合
+        List<Question> popularQuestion = new ArrayList<>();
+        //从Redis库中的zest中根据分数的倒序获取指定数量的题目id和对应的分数组成键值对的对象set集合
+        Set<ZSetOperations.TypedTuple<Object>> questionIds = redisUtils.zReverseRangeWithScores(CacheConstants.POPULAR_QUESTIONS_KEY, 0, size - 1);
+        //定义接收id的集合
+        List<Long> ids = new ArrayList<>();
+        //遍历获取到的题目id和分数
+        if (questionIds != null && questionIds.size() > 0) {
+            //由于Redis中zReverseRangeWithScores已经按分数降序返回，直接使用即可
+            List<Long> idsList = questionIds.stream()
+                    .map(o -> Long.valueOf(o.getValue().toString()))
+                    .collect(Collectors.toList());
+            //将排序后的id集合赋值给ids
+            ids = idsList;
+            log.debug("从Redis中获取到的热门题目id集合为：{}", ids);
+            //根据热门题目id列表查询对应的题目列表
+            for(Long id:ids){
+                Question question = getById(id);
+                popularQuestion.add(question);
+            }
+        }
+        log.debug("查询到的热门题目列表为：{}", popularQuestion);
+        //检查获取到的题目列表的数量是否满足需求，不足则需要补充
+        int diff= size-popularQuestion.size();
+        if(diff>0){
+            //从非热门题目中按照时间倒序加limit+diff获取题目列表
+            LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
+            questionLambdaQueryWrapper.notIn(Question::getId, ids);
+            questionLambdaQueryWrapper.orderByDesc(Question::getCreateTime);
+            //last是给查询条件最后添加一个SQL片段，限制获取的题目数
+            questionLambdaQueryWrapper.last("limit "+diff);
+            List<Question> questions = list(questionLambdaQueryWrapper);
+            log.debug("从非热门题目中获取到的题目列表为：{}", questions);
+            //对查询的补充题目列表进行判空，如果非空则添加到热门题目列表中
+            if(questions!=null && questions.size()>0)
+            {
+                popularQuestion.addAll(questions);
+            }
+        }
+        //对最后的热门题目列表的答案和选项进行填充
+        fillQuestionChoiceAndAnswer(popularQuestion);
+        return popularQuestion;
+    }
+    //定义进行题目访问次数增长的方法
+    //异步方法
+    private void incrementQuestion(Long questionId){
+        Double score = redisUtils.zIncrementScore(CacheConstants.POPULAR_QUESTIONS_KEY,questionId,1);
+        log.info("完成{}题目分数累计，累计后分数为：{}",questionId,score);
+    }
+
+    //填充question对象的选项和答案属性
+    private void fillQuestionChoiceAndAnswer(List<Question> questionList) {
+        //1. 非空判断
+        if (questionList == null || questionList.size() == 0) {
+            log.debug("没有查询对应的问题集合数据！！");
+            return;
+        }
+        //2. 查询所有答案和选项
+        //优化查询本次题目的答案和选项
+        //查询本地题目集合对应的id集合！！
+        List<Long> ids = questionList.stream().map(Question::getId).collect(Collectors.toList());
+        //查询本次题目的选项集合
+        List<QuestionChoice> questionChoiceList =
+                questionChoiceMapper.selectList(new LambdaQueryWrapper<QuestionChoice>().in(QuestionChoice::getQuestionId,ids));
+        //查询本次题目的答案
+        List<QuestionAnswer> questionAnswers =
+                questionAnswerMapper.selectList(new LambdaQueryWrapper<QuestionAnswer>().in(QuestionAnswer::getQuestionId,ids));
+        //3. 答案和选项进行map转化
+        Map<Long, List<QuestionChoice>> questionChoiceMap =
+                questionChoiceList.stream().collect(Collectors.groupingBy(QuestionChoice::getQuestionId));
+        Map<Long, QuestionAnswer> answerMap =
+                questionAnswers.stream().collect(Collectors.toMap(QuestionAnswer::getQuestionId, a -> a));
+        //4. 循环问题集合，进行选项和答案配置
+        questionList.forEach(question -> {
+            //每个题目一定答案
+            question.setAnswer(answerMap.get(question.getId()));
+            //选择题才有选项
+            if ("CHOICE".equals(question.getType())){
+                List<QuestionChoice> questionChoices = questionChoiceMap.get(question.getId());
+                if (questionChoices != null) {
+                    questionChoices.sort(Comparator.comparingInt(QuestionChoice::getSort));
+                    question.setChoices(questionChoices);
+                }
+            }
+        });
+    }
+}
