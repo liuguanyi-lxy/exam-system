@@ -1,10 +1,13 @@
 package com.atguigu.exam.service;
 
 import com.atguigu.exam.entity.Question;
+import com.atguigu.exam.vo.QuestionImportVo;
 import com.atguigu.exam.vo.QuestionPageVo;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -48,4 +51,10 @@ public interface QuestionService extends IService<Question> {
     void customRemoveQuestionById(Long id);
 
     List<Question> customFindPopularQuestions(Integer size);
+    //将传入的文件转换成对应的JAVA对象
+    List<QuestionImportVo> preViewExcel(MultipartFile file) throws IOException;
+    //将传入文件进行解析成JAVA对象并且保存题目列表
+    String importExeclBatchQuestions(MultipartFile file) throws IOException;
+    //批量导入题目业务,根据传入的题目导入列表进行题目保存
+    int importBatchQuestions(List<QuestionImportVo> questions);
 }

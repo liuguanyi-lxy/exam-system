@@ -10,18 +10,23 @@ import com.atguigu.exam.mapper.QuestionAnswerMapper;
 import com.atguigu.exam.mapper.QuestionChoiceMapper;
 import com.atguigu.exam.mapper.QuestionMapper;
 import com.atguigu.exam.service.QuestionService;
+import com.atguigu.exam.utils.ExcelUtil;
 import com.atguigu.exam.utils.RedisUtils;
+import com.atguigu.exam.vo.QuestionImportVo;
 import com.atguigu.exam.vo.QuestionPageVo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -205,6 +210,96 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         questionAnswerMapper.delete(new LambdaQueryWrapper<QuestionAnswer>().eq(QuestionAnswer::getQuestionId, id));
         questionChoiceMapper.delete(new LambdaQueryWrapper<QuestionChoice>().eq(QuestionChoice::getQuestionId, id));
     }
+    //将传入文件进行解析成JAVA对象并且保存题目列表
+    @Override
+    public String importExeclBatchQuestions(MultipartFile file) throws IOException {
+        //校验 传入的文件是否为null或者为空
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("导入的题目文件不能为空！");
+        }
+        //获取文件名
+        String filename = file.getOriginalFilename();
+        //校验传入的文件名是否以xls和xlsx结尾
+        if (!filename.endsWith(".xls") && !filename.endsWith(".xlsx")) {
+            throw new RuntimeException("文件格式不正确！必须是以xls和xlsx结尾");
+        }
+        //使用ExcelUtils工具对传入的文件进行解析
+        List<QuestionImportVo> questionImportVos = ExcelUtil.parseExcel(file);
+        //调用批量导入题目业务,记录成功保存的题目数量
+        int successCount = importBatchQuestions(questionImportVos);
+        String result="批量导入题目接口调用成功，一共:%s道题目需要导入，成功导入%s道题目".formatted(questionImportVos.size(),successCount);
+        return result;
+    }
+    //批量导入题目业务,根据传入的题目导入列表进行题目保存
+    public int importBatchQuestions(List<QuestionImportVo> questionImportVos) {
+        int successCount = 0;
+        //遍历题目列表并且try-catch对题目进行自定义保存，并统计成功保存题目数
+        for (QuestionImportVo questionImportVo : questionImportVos) {
+            try {
+                //将QuestionImportVo对象转换成Question对象
+                Question question =convertQuestionImportVoToQuestion(questionImportVo);
+                //调用自定义保存题目信息的方法
+                customSaveQuestion(question);
+                successCount++;
+            } catch (Exception e) {
+                log.error("导入题目失败，题目内容为：{}", questionImportVo);
+            }
+        }
+        return successCount;
+    }
+    /**
+     * 将QuestionImportVo对象转换成Question对象
+     * @param questionImportVo
+     * @return
+     */
+    private Question convertQuestionImportVoToQuestion(QuestionImportVo questionImportVo) {
+        Question question = new Question();
+        //使用BeanUtils的复制相同属性名的值的方法，将questionImportVo对象对应属性复制到Question对象中
+        BeanUtils.copyProperties(questionImportVo, question);
+        //判断题目类型是否为选择题，是就对选项进行赋值
+        if("CHOICE".equals(questionImportVo.getType())) {
+            //使用ArrayList获取有序的选项列表
+            List<QuestionChoice> questionChoices = new ArrayList<>(questionImportVo.getChoices().size());
+            //遍历questionImportVo的选项集合，复制其中choiceImportDto选项对象的对应值到QuestionChoice对象中，然后添加到选项集合中
+            for (QuestionImportVo.ChoiceImportDto choiceImportDto : questionImportVo.getChoices()) {
+                QuestionChoice questionChoice = new QuestionChoice();
+                //使用BeanUtils的复制相同属性名的值的方法，将choiceImportDto对象对应属性复制到QuestionChoice对象中
+                BeanUtils.copyProperties(choiceImportDto, questionChoice);
+                questionChoices.add(questionChoice);
+            }
+            //将转换后的选项集合添加到question对象中
+            question.setChoices(questionChoices);
+        }
+        //不管是不是选择题都得对答案赋值
+        QuestionAnswer questionAnswer = new QuestionAnswer();
+        //判断题需要将true和false大写，否则无法识别
+        if("JUDGE".equals(questionImportVo.getType())) {
+            questionAnswer.setAnswer(questionImportVo.getAnswer().toUpperCase());
+        }else{
+            questionAnswer.setAnswer(questionImportVo.getAnswer());
+        }
+        questionAnswer.setKeywords(questionImportVo.getKeywords());
+        question.setAnswer(questionAnswer);
+        return question;
+    }
+    //    将传入的文件转换成JAVA对应的vo对象
+    @Override
+    public List<QuestionImportVo> preViewExcel(MultipartFile file) throws IOException {
+        //校验 传入的文件是否为null或者为空
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("文件不能为空！");
+        }
+        //获取文件名
+        String filename = file.getOriginalFilename();
+        //校验传入的文件名是否以xls和xlsx结尾
+        if (!filename.endsWith(".xls") && !filename.endsWith(".xlsx")) {
+            throw new RuntimeException("文件格式不正确！必须是以xls和xlsx结尾");
+        }
+        //使用ExcelUtils工具对传入的文件进行解析
+        List<QuestionImportVo> questionImportVos = ExcelUtil.parseExcel(file);
+        return questionImportVos;
+    }
+
     //自定义查询热门题目列表
     @Override
     public List<Question> customFindPopularQuestions(Integer size) {

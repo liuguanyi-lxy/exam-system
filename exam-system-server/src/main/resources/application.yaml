@@ -49,8 +49,29 @@ mybatis-plus:
     auto-mapping-behavior: full
 
 # minio的配置
+# MinIO对象存储服务配置信息
 minio:
+  # MinIO服务器的访问地址
   endpoint: http://REDACTED_LAN_IP:9000
+  # 访问MinIO服务器的用户名
   username: minioadmin
+  # 访问MinIO服务器的密码
   password: lxy112804
+  # 用于存储文件的桶名称
   bucket-name: exam0625
+
+# kimi的配置
+# 配置文件，用于定义与Kimi API相关的参数
+kimi:
+  # API相关配置
+  api:
+    # 指定使用的模型名称为moonshot-v1-32k
+    model: moonshot-v1-32k
+    # API的请求URI地址
+    uri: https://api.moonshot.cn/v1/chat/completions
+    # API密钥，用于身份验证
+    api-key: REDACTED_API_KEY
+    # 最大令牌数，限制生成内容的最大长度
+    max-tokens: 4096
+    # 温度参数，控制生成内容的随机性，值越小输出越确定
+    temperature: 0.3
