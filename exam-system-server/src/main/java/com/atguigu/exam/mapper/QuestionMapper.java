@@ -13,6 +13,9 @@ import java.util.Map;
  * 继承MyBatis Plus的BaseMapper，提供基础的CRUD操作
  */
 public interface QuestionMapper extends BaseMapper<Question> {
+    //TODO: 根据试卷ID查询题目列表
+    List<Question> customQueryQuestionListByPaperId(Long id);
+    //TODO: 根据分类ID查询题目数量
     @Select("select category_id,ifnull(count(*),0) count from questions where is_deleted=0 group by category_id")
     List<Map<Long,Long>> selectCategoryCount();
     //TODO: 根据ID查询题目详情，包括选项和答案

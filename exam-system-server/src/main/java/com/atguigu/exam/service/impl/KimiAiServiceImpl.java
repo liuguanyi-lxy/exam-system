@@ -107,7 +107,7 @@ public class KimiAiServiceImpl implements KimiAiService {
                         break;
                     case "TEXT":
                         // 添加简答题类型描述
-                        prompt.append("简答题 ");
+                        prompt.append("简答题,需要提取简答题答案的关键得分的关键词");
                         break;
                 }
             }
@@ -153,6 +153,7 @@ public class KimiAiServiceImpl implements KimiAiService {
         prompt.append("        {\"content\": \"选项内容\", \"isCorrect\": true/false, \"sort\": 1}\n");
         prompt.append("      ],\n");
         prompt.append("      \"answer\": \"TRUE或FALSE(判断题专用)|文本答案(简答题专用)|A、B、C、D(选择题答案)\",\n");
+        prompt.append("      \"keywords\": \"简答题的答案关键词(简答题专用,选择题和判断题则该字段为null，简答题中该字段代表简答题答案的关键得分词))\"\n");
         prompt.append("      \"analysis\": \"题目解析\"\n");
         prompt.append("    }\n");
         prompt.append("  ]\n");
@@ -166,7 +167,7 @@ public class KimiAiServiceImpl implements KimiAiService {
         prompt.append("4. 每道题都要有详细的解析\n");
         prompt.append("5. 题目要有实际价值，贴近实际应用场景\n");
         prompt.append("6. 严格按照JSON格式返回，确保可以正确解析\n");
-
+        prompt.append("7. 简答题需要给答案填充keyword，用于AI判卷的依据\n");
         // 如果只生成判断题，额外强调答案平衡
         if (request.getTypes() != null && request.getTypes().equals("JUDGE") && request.getCount() > 1) {
             prompt.append("7. **判断题答案分布要求**：在").append(request.getCount()).append("道判断题中，");
@@ -390,7 +391,8 @@ public class KimiAiServiceImpl implements KimiAiService {
                 
                 // 设置题目答案（判断题为TRUE/FALSE，简答题为文本答案）
                 questionImportVo.setAnswer(questionJson.getString("answer"));
-                
+                // 设置题目关键词
+                questionImportVo.setKeywords(questionJson.getString("keywords"));
                 // 将处理完成的题目对象添加到列表中
                 questionImportVoList.add(questionImportVo);
             }

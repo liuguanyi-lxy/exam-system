@@ -45,7 +45,7 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
     # 开启自动驼峰命名规则映射，即从数据库下划线命名到Java驼峰命名的自动转换
     auto-map-underscore-to-camel-case: true
-    # 设置自动映射行为为full，表示自动映射所有列
+    # 设置自动映射行为为full，表示自动映射所有非主键的列给JAVA对象的字段，在写mapper.xml文件时，可以省略resultMap标签的result属性,只写主键的属性
     auto-mapping-behavior: full
 
 # minio的配置

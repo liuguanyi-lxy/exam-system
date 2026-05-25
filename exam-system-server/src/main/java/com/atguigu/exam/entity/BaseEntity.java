@@ -30,7 +30,7 @@ public class BaseEntity implements Serializable {
     @TableField("is_deleted")
     //@TableLogic 是 MyBatis-Plus 提供的一个注解，用于实现逻辑删除功能,在数据库中并不会真正删除数据，而是将数据的状态标记为已删除
     @TableLogic
-    @JsonIgnore
+    @JsonIgnore//对象序列化为json格式时会忽略该字段
     private Byte isDeleted;
 
 }
