@@ -2,11 +2,16 @@ package com.atguigu.exam.controller;
 
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.service.ExamRecordService;
+import com.atguigu.exam.service.ExamService;
 import com.atguigu.exam.vo.ExamRankingVO;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,10 +23,13 @@ import java.util.List;
 @RestController  // REST控制器，返回JSON数据
 @RequestMapping("/api/exam-records")  // 考试记录API路径前缀
 @Tag(name = "考试记录管理", description = "考试记录相关操作，包括记录查询、成绩管理、排行榜展示等功能")  // Swagger API分组
+@Slf4j
 public class ExamRecordController {
 
-
-
+    @Autowired
+    private ExamService examService;
+    @Autowired
+    private ExamRecordService examRecordService;
     /**
      * 分页查询考试记录
      */
@@ -36,8 +44,27 @@ public class ExamRecordController {
             @Parameter(description = "开始日期，格式：yyyy-MM-dd") @RequestParam(required = false) String startDate,
             @Parameter(description = "结束日期，格式：yyyy-MM-dd") @RequestParam(required = false) String endDate
     ) {
-
-        return Result.success(null);
+        //分页查询的Page对象,根据传入的参数指定当前页和每页显示数量
+        Page<ExamRecord> examRecordPage = new Page<>(page, size);
+        // 添加分页查询的条件
+        LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        examRecordLambdaQueryWrapper.like(studentName != null, ExamRecord::getStudentName, studentName);
+        // 将状态码转换为状态字符串
+        if (status != null) {
+            String statusStr = switch (status) {
+                case 0 -> "进行中";
+                case 1 -> "已完成";
+                case 2 -> "已批阅";
+                default -> null;
+            };
+            examRecordLambdaQueryWrapper.eq(statusStr != null, ExamRecord::getStatus, statusStr);
+        }
+        examRecordLambdaQueryWrapper.between(startDate != null && endDate != null, ExamRecord::getCreateTime, startDate, endDate);
+        //按照考试开始时间降序排列,后面的考试记录先显示
+        examRecordLambdaQueryWrapper.orderByDesc(ExamRecord::getCreateTime);
+        examRecordService.customPageGetExamRecord(examRecordPage, examRecordLambdaQueryWrapper);
+        log.info("成功通过分页查询条件得到对应的考试记录列表，每个考试记录对象包含试卷详情以及答题记录,考试记录列表为%s".formatted(examRecordPage.getRecords()));
+        return Result.success(examRecordPage);
     }
 
     /**
@@ -47,8 +74,9 @@ public class ExamRecordController {
     @Operation(summary = "获取考试记录详情", description = "根据记录ID获取考试记录的详细信息，包括试卷内容和答题情况")  // API描述
     public Result<ExamRecord> getExamRecordById(
             @Parameter(description = "考试记录ID") @PathVariable Integer id) {
-
-        return Result.success(null);
+            ExamRecord examRecord = examService.customGetExamRecordById(id);
+            log.info("成功通过考试记录ID{}得到对应的考试记录详情,考试记录详情为{}",id,examRecord);
+            return Result.success(examRecord);
     }
 
     /**
@@ -58,8 +86,9 @@ public class ExamRecordController {
     @Operation(summary = "删除考试记录", description = "根据ID删除指定的考试记录")  // API描述
     public Result<Void> deleteExamRecord(
             @Parameter(description = "考试记录ID") @PathVariable Integer id) {
-
-         return Result.error("删除失败");
+            examRecordService.customRemoveById(id);
+            log.info("删除考试记录成功！id:{}",id);
+            return Result.success("删除考试记录成功！id:{}");
     }
 
     /**
@@ -77,7 +106,8 @@ public class ExamRecordController {
             @Parameter(description = "显示数量限制，可选，不传则返回所有记录") @RequestParam(required = false) Integer limit
     ) {
         // 使用优化的查询方法，避免N+1查询问题
-
-        return Result.success(null);
+        List<ExamRankingVO> examRankingVOS =  examRecordService.customGetRanking(paperId,limit);
+        log.info("查询：{}试卷下的{}条数据成功！数据为：{}",paperId,limit,examRankingVOS);
+        return Result.success(examRankingVOS);
     }
 } 

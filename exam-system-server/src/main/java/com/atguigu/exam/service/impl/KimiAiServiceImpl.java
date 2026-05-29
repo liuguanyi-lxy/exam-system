@@ -57,13 +57,32 @@ public class KimiAiServiceImpl implements KimiAiService {
             prompt.append("  \"reason\": \"扣分原因或得分依据(30字以内)\"\n");
             prompt.append("}");
          */
-        com.alibaba.fastjson2.JSONObject jsonObject = JSON.parseObject(content);
-        Integer aiScore = jsonObject.getInteger("score");
-        String feedback = jsonObject.getString("feedback");
-        String reason = jsonObject.getString("reason");
-        if (aiScore > maxScore) aiScore = maxScore;
-        if (aiScore < 0) aiScore = 0;
-        return  new GradingResult(aiScore, feedback, reason);
+        try {
+            com.alibaba.fastjson2.JSONObject jsonObject = JSON.parseObject(content);
+            Integer aiScore = jsonObject.getInteger("score");
+            String feedback = jsonObject.getString("feedback");
+            String reason = jsonObject.getString("reason");
+            
+            // 验证必要字段是否存在
+            if (aiScore == null) {
+                log.error("AI返回结果缺少score字段: {}", content);
+                throw new RuntimeException("AI返回结果格式错误：缺少score字段");
+            }
+            if (feedback == null) {
+                feedback = "无反馈";
+            }
+            if (reason == null) {
+                reason = "无说明";
+            }
+            
+            // 分数范围校验
+            if (aiScore > maxScore) aiScore = maxScore;
+            if (aiScore < 0) aiScore = 0;
+            return  new GradingResult(aiScore, feedback, reason);
+        } catch (Exception e) {
+            log.error("解析AI判题结果失败，原始内容: {}", content, e);
+            throw new RuntimeException("AI返回结果解析失败: " + e.getMessage(), e);
+        }
     }
 
     /**

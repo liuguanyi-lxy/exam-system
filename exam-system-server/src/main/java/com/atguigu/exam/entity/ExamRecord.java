@@ -29,9 +29,9 @@ public class ExamRecord extends BaseEntity {
             example = "85")
     private Integer score; // 得分
 
-    @Schema(description = "答题记录，JSON格式存储所有答题内容", 
-            example = "[{\"questionId\":1,\"userAnswer\":\"A\"},{\"questionId\":2,\"userAnswer\":\"B\"}]")
-    private String answers; // 答题记录
+    @Schema(description = "Ai对此次考试的评语",
+            example = "您本次考试表现..........")
+    private String summary; // 考试评语
 
     @Schema(description = "考试开始时间", 
             example = "2024-01-15 09:00:00")
