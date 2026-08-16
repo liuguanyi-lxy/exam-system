@@ -1,0 +1,85 @@
+// ============================================================
+// SCSS 混合宏 — 玻璃态 / 渐变 / 卡片悬停 / 动画
+// ============================================================
+@import './variables';
+
+// 玻璃态卡片
+@mixin glass($blur: 16px, $opacity: 0.7) {
+  background: rgba(255, 255, 255, $opacity);
+  backdrop-filter: blur($blur);
+  -webkit-backdrop-filter: blur($blur);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: $shadow-md;
+}
+
+// 玻璃态深色变体
+@mixin glass-dark($blur: 16px, $opacity: 0.25) {
+  background: rgba(30, 41, 59, $opacity);
+  backdrop-filter: blur($blur);
+  -webkit-backdrop-filter: blur($blur);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+// 渐变文字
+@mixin gradient-text {
+  background: $gradient-text;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+// 卡片悬停抬起效果
+@mixin card-hover($lift: -4px, $glow: false) {
+  transition: transform $transition-normal, box-shadow $transition-normal;
+  &:hover {
+    transform: translateY($lift);
+    @if $glow {
+      box-shadow: $shadow-glow-soft;
+    } @else {
+      box-shadow: $shadow-lg;
+    }
+  }
+}
+
+// 页面路由过渡
+@mixin page-enter {
+  animation: fade-in-up $transition-normal ease-out both;
+}
+
+// 渐变主按钮
+@mixin gradient-button {
+  background: $gradient-primary;
+  border: none;
+  color: #fff;
+  transition: all $transition-normal;
+  &:hover {
+    box-shadow: $shadow-glow;
+    transform: translateY(-1px);
+    color: #fff;
+  }
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+// 装饰性圆点背景
+@mixin dotted-bg($color: rgba(79, 70, 229, 0.12), $size: 24px) {
+  background-image: radial-gradient($color 1px, transparent 1px);
+  background-size: $size $size;
+}
+
+// 顶部渐变色带
+@mixin top-accent($color1: $primary, $color2: $secondary) {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, $color1, $color2);
+    border-radius: $radius-lg $radius-lg 0 0;
+  }
+}
