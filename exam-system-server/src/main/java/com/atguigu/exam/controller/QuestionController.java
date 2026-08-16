@@ -233,7 +233,9 @@ public class QuestionController {
             @Parameter(description = "分类ID限制条件，可选") @RequestParam(required = false) Long categoryId,
             @Parameter(description = "难度限制条件，可选值：EASY/MEDIUM/HARD") @RequestParam(required = false) String difficulty) {
 
-        return Result.success(null);
+        List<Question> questionList = questionService.customRandomQuestions(count, categoryId, difficulty);
+        log.info("随机抽取题目接口调用成功！数量：{}", questionList.size());
+        return Result.success(questionList);
     }
 
     /**
@@ -295,8 +297,9 @@ public class QuestionController {
     @PostMapping("/popular/refresh")
     @Operation(summary = "刷新热门题目缓存", description = "管理员功能，重置或初始化热门题目的访问计数")
     public Result<Integer> refreshPopularQuestions() {
-
-        return Result.error("刷新热门题目缓存失败");
+        int count = questionService.refreshPopularQuestions();
+        log.info("刷新热门题目缓存成功！共处理 {} 道题目", count);
+        return Result.success(count, "热门题目缓存刷新成功");
     }
 
 } 

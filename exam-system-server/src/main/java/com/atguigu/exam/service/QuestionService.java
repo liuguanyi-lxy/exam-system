@@ -51,6 +51,10 @@ public interface QuestionService extends IService<Question> {
     void customRemoveQuestionById(Long id);
 
     List<Question> customFindPopularQuestions(Integer size);
+    // 随机抽取题目（用于智能组卷），支持分类和难度过滤
+    List<Question> customRandomQuestions(Integer count, Long categoryId, String difficulty);
+    // 刷新热门题目缓存，重置所有题目访问计数
+    int refreshPopularQuestions();
     //将传入的文件转换成对应的JAVA对象
     List<QuestionImportVo> preViewExcel(MultipartFile file) throws IOException;
     //将传入文件进行解析成JAVA对象并且保存题目列表

@@ -305,24 +305,33 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     public List<Question> customFindPopularQuestions(Integer size) {
         //定义热门题目集合
         List<Question> popularQuestion = new ArrayList<>();
-        //从Redis库中的zest中根据分数的倒序获取指定数量的题目id和对应的分数组成键值对的对象set集合
-        Set<ZSetOperations.TypedTuple<Object>> questionIds = redisUtils.zReverseRangeWithScores(CacheConstants.POPULAR_QUESTIONS_KEY, 0, size - 1);
         //定义接收id的集合
         List<Long> ids = new ArrayList<>();
-        //遍历获取到的题目id和分数
-        if (questionIds != null && questionIds.size() > 0) {
-            //由于Redis中zReverseRangeWithScores已经按分数降序返回，直接使用即可
-            List<Long> idsList = questionIds.stream()
-                    .map(o -> Long.valueOf(o.getValue().toString()))
-                    .collect(Collectors.toList());
-            //将排序后的id集合赋值给ids
-            ids = idsList;
-            log.debug("从Redis中获取到的热门题目id集合为：{}", ids);
-            //根据热门题目id列表查询对应的题目列表
-            for(Long id:ids){
-                Question question = getById(id);
-                popularQuestion.add(question);
+        //从Redis库中的zest中根据分数的倒序获取指定数量的题目id和对应的分数组成键值对的对象set集合
+        try {
+            Set<ZSetOperations.TypedTuple<Object>> questionIds = redisUtils.zReverseRangeWithScores(CacheConstants.POPULAR_QUESTIONS_KEY, 0, size - 1);
+            //遍历获取到的题目id和分数
+            if (questionIds != null && questionIds.size() > 0) {
+                //由于Redis中zReverseRangeWithScores已经按分数降序返回，直接使用即可
+                List<Long> idsList = questionIds.stream()
+                        .map(o -> Long.valueOf(o.getValue().toString()))
+                        .collect(Collectors.toList());
+                //将排序后的id集合赋值给ids
+                ids = idsList;
+                log.debug("从Redis中获取到的热门题目id集合为：{}", ids);
+                //根据热门题目id列表查询对应的题目列表
+                for(Long id:ids){
+                    Question question = getById(id);
+                    if (question != null) {
+                        popularQuestion.add(question);
+                    }
+                }
             }
+        } catch (Exception e) {
+            // Redis 不可用时降级：直接从数据库查询，不影响热门题目展示
+            log.warn("Redis 获取热门题目失败，降级为数据库查询：{}", e.getMessage());
+            popularQuestion = new ArrayList<>();
+            ids = new ArrayList<>();
         }
         log.debug("查询到的热门题目列表为：{}", popularQuestion);
         //检查获取到的题目列表的数量是否满足需求，不足则需要补充
@@ -330,7 +339,7 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         if(diff>0){
             //从非热门题目中按照时间倒序加limit+diff获取题目列表
             LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
-            questionLambdaQueryWrapper.notIn(Question::getId, ids);
+            questionLambdaQueryWrapper.notIn(!ids.isEmpty(), Question::getId, ids);
             questionLambdaQueryWrapper.orderByDesc(Question::getCreateTime);
             //last是给查询条件最后添加一个SQL片段，限制获取的题目数
             questionLambdaQueryWrapper.last("limit "+diff);
@@ -346,11 +355,62 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         fillQuestionChoiceAndAnswer(popularQuestion);
         return popularQuestion;
     }
+
+    //自定义随机抽取题目，支持分类和难度过滤
+    @Override
+    public List<Question> customRandomQuestions(Integer count, Long categoryId, String difficulty) {
+        int limit = count == null || count <= 0 ? 10 : Math.min(count, 50);
+        LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<>();
+        if (categoryId != null) {
+            wrapper.eq(Question::getCategoryId, categoryId);
+        }
+        if (difficulty != null && !difficulty.isBlank()) {
+            wrapper.eq(Question::getDifficulty, difficulty);
+        }
+        List<Question> all = list(wrapper);
+        if (all == null || all.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // 随机打乱后截取
+        Collections.shuffle(all);
+        List<Question> result = all.subList(0, Math.min(limit, all.size()));
+        // 填充答案和选项
+        fillQuestionChoiceAndAnswer(result);
+        return result;
+    }
+
+    //刷新热门题目缓存：重置所有题目访问计数
+    @Override
+    public int refreshPopularQuestions() {
+        try {
+            // 1. 清空旧的热门缓存
+            redisUtils.delete(CacheConstants.POPULAR_QUESTIONS_KEY);
+            // 2. 为所有题目设置初始计数 0
+            List<Question> all = list();
+            if (all != null && !all.isEmpty()) {
+                for (Question q : all) {
+                    redisUtils.zAdd(CacheConstants.POPULAR_QUESTIONS_KEY, q.getId(), 0);
+                }
+            }
+            log.info("热门题目缓存刷新完成，共处理 {} 道题目", all == null ? 0 : all.size());
+            return all == null ? 0 : all.size();
+        } catch (Exception e) {
+            // Redis 不可用时降级：仅记录日志，不影响接口调用
+            log.warn("刷新热门题目缓存失败（Redis 不可用），已降级：{}", e.getMessage());
+            return 0;
+        }
+    }
+
     //定义进行题目访问次数增长的方法
     //异步方法
     private void incrementQuestion(Long questionId){
-        Double score = redisUtils.zIncrementScore(CacheConstants.POPULAR_QUESTIONS_KEY,questionId,1);
-        log.info("完成{}题目分数累计，累计后分数为：{}",questionId,score);
+        try {
+            Double score = redisUtils.zIncrementScore(CacheConstants.POPULAR_QUESTIONS_KEY,questionId,1);
+            log.info("完成{}题目分数累计，累计后分数为：{}",questionId,score);
+        } catch (Exception e) {
+            // Redis 不可用时静默降级，不影响题目详情查询
+            log.warn("Redis 访问计数失败（已忽略）：{}", e.getMessage());
+        }
     }
 
     //填充question对象的选项和答案属性

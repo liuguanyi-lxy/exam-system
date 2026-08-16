@@ -16,8 +16,11 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -195,37 +198,42 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                 String CorrectAnswer = question.getAnswer().getAnswer();
                 //获取学生答案
                 String userAnswer = answerRecord.getUserAnswer();
-                //2.判断学生答案是否正确,先分辨题目类型
-                if(!"TEXT".equals(question.getType())){
-                    //如果题目类型不是简答题直接进行答案比对
-                    if(CorrectAnswer.equals(userAnswer))
+                //2.判断学生答案是否正确，先分辨题目类型
+                if("TEXT".equals(question.getType())){
+                    //简答题使用AI进行评卷，用GradingResult接收判卷结果
+                    GradingResult gradingResult = kimiAiService.gradingTextQuestion(question, userAnswer, score);
+                    //设置该题目对应的得分
+                    answerRecord.setScore(gradingResult.getScore());
+                    //根据评卷的分数判断该答题正确情况和扣分原因以及反馈
+                    if(gradingResult.getScore() == 0){
+                        //0分则设置错误
+                        answerRecord.setIsCorrect(0);
+                        //设置ai扣分原因
+                        answerRecord.setAiCorrection(gradingResult.getReason());
+                    }else if(gradingResult.getScore() == score){
+                        //满分则设置正确
+                        answerRecord.setIsCorrect(1);
+                        //设置ai反馈
+                        answerRecord.setAiCorrection(gradingResult.getFeedback());
+                    }else{
+                        //基本正确则设置基本正确
+                        answerRecord.setIsCorrect(2);
+                        //设置ai扣分原因
+                        answerRecord.setAiCorrection(gradingResult.getReason());
+                    }
+                }else{
+                    //客观题（选择题/判断题）智能比对：兼容 字母/选项内容/中文/英文 多种答案格式
+                    if(isObjectiveAnswerCorrect(question, CorrectAnswer, userAnswer))
                     {
                         //设置该题目对应的得分
                         answerRecord.setScore(score);
                         //设置该题目的对错,0是错误，1是正确，2是基本正确
                         answerRecord.setIsCorrect(1);
+                        answerRecord.setAiCorrection("回答正确");
                     }else{
-                        //简答题需要进行ai评卷，用GradingResult接收判卷结果
-                        GradingResult gradingResult = kimiAiService.gradingTextQuestion(question, userAnswer, score);
-                        //设置该题目对应的得分
-                        answerRecord.setScore(gradingResult.getScore());
-                        //根据评卷的分数判断该答题正确情况和扣分原因以及反馈
-                        if(gradingResult.getScore() == 0){
-                            //0分则设置错误
-                            answerRecord.setIsCorrect(0);
-                            //设置ai扣分原因
-                            answerRecord.setAiCorrection(gradingResult.getReason());
-                        }else if(gradingResult.getScore() == score){
-                            //满分则设置正确
-                            answerRecord.setIsCorrect(1);
-                            //设置ai反馈
-                            answerRecord.setAiCorrection(gradingResult.getFeedback());
-                        }else{
-                            //基本正确则设置基本正确
-                            answerRecord.setIsCorrect(2);
-                            //设置ai扣分原因
-                            answerRecord.setAiCorrection(gradingResult.getReason());
-                        }
+                        answerRecord.setScore(0);
+                        answerRecord.setIsCorrect(0);
+                        answerRecord.setAiCorrection("回答错误");
                     }
                 }
             }catch (Exception e){
@@ -260,5 +268,169 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         examRecord.setStatus("已批阅");
         this.updateById(examRecord);
         return examRecord;
+    }
+
+    /**
+     * 客观题（选择题/判断题）答案智能比对
+     * 兼容以下答案格式差异：
+     *  - 选择题：标准答案存字母(B)，学生答案可能是选项内容、字母或"B. 内容"
+     *  - 多选题：标准答案可能是"AB"或内容列表，学生答案用逗号分隔的内容或字母
+     *  - 判断题：标准答案存 TRUE/FALSE，学生答案可能是 正确/错误/对/错
+     */
+    private boolean isObjectiveAnswerCorrect(Question question, String correctAnswer, String userAnswer) {
+        if (correctAnswer == null || userAnswer == null) return false;
+        String user = userAnswer.trim();
+        if (user.isEmpty()) return false;
+
+        // 判断题：中文/英文归一化比对
+        if ("JUDGE".equals(question.getType())) {
+            return normalizeJudgeAnswer(correctAnswer).equals(normalizeJudgeAnswer(user));
+        }
+
+        // 选择题
+        if ("CHOICE".equals(question.getType())) {
+            List<QuestionChoice> choices = question.getChoices();
+
+            // 多选题：多选答案用逗号分隔，需集合比对（顺序无关），覆盖字母/内容各种组合
+            if (Boolean.TRUE.equals(question.getMulti())) {
+                Set<String> userSet = splitAnswer(user);
+                if (userSet.isEmpty()) return false;
+                Set<String> correctSet = splitAnswer(correctAnswer);
+                boolean userIsLetter = isPureLetterSet(userSet);
+                boolean correctIsLetter = isPureLetterSet(correctSet);
+
+                if (userIsLetter && correctIsLetter) {
+                    // 两者都是字母（如 "AB" vs "A,B"）
+                    return userSet.equals(correctSet);
+                } else if (userIsLetter) {
+                    // 学生答字母，标准答内容 -> 内容映射到字母比较
+                    return userSet.equals(mapContentsToLetters(correctAnswer, choices));
+                } else if (correctIsLetter) {
+                    // 学生答内容，标准答字母 -> 字母映射到内容比较
+                    return userSet.equals(mapLettersToContents(correctAnswer, choices));
+                } else {
+                    // 两者都是选项内容，直接比较
+                    return userSet.equals(correctSet);
+                }
+            }
+
+            // 单选题：逐一尝试各种格式匹配
+            // 1) 直接字母比对
+            if (normalizeChoice(correctAnswer).equals(normalizeChoice(user))) return true;
+            // 2) 标准答案字母 -> 学生答案内容
+            if (matchLetterToContent(correctAnswer, user, choices)) return true;
+            // 3) 标准答案内容 -> 学生答案字母
+            if (matchContentToLetter(correctAnswer, user, choices)) return true;
+            // 4) 通过 isCorrect 标记判定：学生答案是否命中唯一正确选项
+            return isContentCorrectChoice(user, choices);
+        }
+
+        // 兜底：直接比对
+        return correctAnswer.equals(userAnswer);
+    }
+
+    /** 判断题答案归一化：正确/对/TRUE/true -> TRUE，错误/错/FALSE/false -> FALSE */
+    private String normalizeJudgeAnswer(String ans) {
+        if (ans == null) return "";
+        String t = ans.trim();
+        if ("TRUE".equalsIgnoreCase(t) || "正确".equals(t) || "对".equals(t) || "T".equalsIgnoreCase(t)) return "TRUE";
+        if ("FALSE".equalsIgnoreCase(t) || "错误".equals(t) || "错".equals(t) || "F".equalsIgnoreCase(t)) return "FALSE";
+        return t;
+    }
+
+    /** 选择题答案归一化：去掉前导字母和点，如 "B. xxx" -> "xxx"，保留纯字母 */
+    private String normalizeChoice(String ans) {
+        if (ans == null) return "";
+        String t = ans.trim();
+        // 去除前导字母和点（如 "B. Java..."）
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^[A-Za-z]+[.、．:：]\\s*(.*)$").matcher(t);
+        if (m.matches() && !m.group(1).isEmpty()) return m.group(1).trim();
+        return t;
+    }
+
+    /** 标准答案是字母(B)，学生答案是内容 -> 匹配 */
+    private boolean matchLetterToContent(String letterAnswer, String userContent, List<QuestionChoice> choices) {
+        if (choices == null) return false;
+        String letters = letterAnswer.trim().toUpperCase();
+        // 学生答案可能是 "B. xxx" 或纯内容
+        String content = normalizeChoice(userContent);
+        for (QuestionChoice c : choices) {
+            char cLetter = (char) ('A' + c.getSort());
+            if (letters.indexOf(cLetter) >= 0 && content.equals(c.getContent())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 标准答案是内容，学生答案是字母(B) -> 匹配 */
+    private boolean matchContentToLetter(String contentAnswer, String userLetter, List<QuestionChoice> choices) {
+        if (choices == null) return false;
+        String content = normalizeChoice(contentAnswer);
+        String letters = userLetter.trim().toUpperCase();
+        for (QuestionChoice c : choices) {
+            char cLetter = (char) ('A' + c.getSort());
+            if (letters.indexOf(cLetter) >= 0 && content.equals(c.getContent())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 学生答案是否为该题正确选项的内容 */
+    private boolean isContentCorrectChoice(String userContent, List<QuestionChoice> choices) {
+        if (choices == null) return false;
+        String content = normalizeChoice(userContent);
+        for (QuestionChoice c : choices) {
+            if (Boolean.TRUE.equals(c.getIsCorrect()) && content.equals(c.getContent())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 将答案字符串拆分成集合（按逗号、顿号、空格分隔） */
+    private Set<String> splitAnswer(String ans) {
+        Set<String> set = new HashSet<>();
+        if (ans == null) return set;
+        for (String part : ans.split("[,，、\\s]+")) {
+            String t = part.trim();
+            if (!t.isEmpty()) set.add(t);
+        }
+        return set;
+    }
+
+    private boolean isPureLetterSet(Set<String> set) {
+        for (String s : set) {
+            if (!s.matches("[A-Za-z]+")) return false;
+        }
+        return true;
+    }
+
+    /** 标准答案字母串 -> 选项内容集合 */
+    private Set<String> mapLettersToContents(String letters, List<QuestionChoice> choices) {
+        Set<String> result = new HashSet<>();
+        if (choices == null) return result;
+        String up = letters.toUpperCase();
+        for (QuestionChoice c : choices) {
+            char cLetter = (char) ('A' + c.getSort());
+            if (up.indexOf(cLetter) >= 0 && c.getContent() != null) {
+                result.add(c.getContent());
+            }
+        }
+        return result;
+    }
+
+    /** 标准答案内容 -> 选项字母集合 */
+    private Set<String> mapContentsToLetters(String contents, List<QuestionChoice> choices) {
+        Set<String> result = new HashSet<>();
+        if (choices == null) return result;
+        Set<String> contentSet = splitAnswer(contents);
+        for (QuestionChoice c : choices) {
+            if (c.getContent() != null && contentSet.contains(c.getContent())) {
+                result.add(String.valueOf((char) ('A' + c.getSort())));
+            }
+        }
+        return result;
     }
 }

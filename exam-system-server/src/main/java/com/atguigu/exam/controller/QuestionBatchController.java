@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -128,8 +129,22 @@ public class QuestionBatchController {
     @PostMapping("/validate")  // 处理POST请求
     @Operation(summary = "验证题目数据", description = "验证题目数据的完整性和格式正确性，返回验证结果和错误信息")  // API描述
     public Result<String> validateQuestions(@RequestBody List<QuestionImportVo> questions) {
-
-        return Result.error("验证题目数据失败!");
+        if (questions == null || questions.isEmpty()) {
+            return Result.success("没有需要验证的题目");
+        }
+        // 逐题验证并收集错误信息
+        List<String> errors = new ArrayList<>();
+        for (int i = 0; i < questions.size(); i++) {
+            String error = validateSingleQuestion(questions.get(i), i + 1);
+            if (error != null) {
+                errors.add(error);
+            }
+        }
+        if (errors.isEmpty()) {
+            return Result.success("全部 " + questions.size() + " 道题目验证通过");
+        }
+        log.warn("题目数据验证未通过，共 {} 个错误", errors.size());
+        return Result.error("验证未通过，共 " + errors.size() + " 个错误：\n" + String.join("\n", errors));
     }
     
     /**

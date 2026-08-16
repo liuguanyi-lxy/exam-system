@@ -2,24 +2,31 @@ package com.atguigu.exam.controller;
 
 
 import com.atguigu.exam.common.Result;
+import com.atguigu.exam.entity.User;
+import com.atguigu.exam.service.UserService;
 import com.atguigu.exam.vo.LoginRequestVo;
 import com.atguigu.exam.vo.LoginResponseVo;
+import com.atguigu.exam.vo.RegisterRequestVo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 
 /**
  * 用户控制器 - 处理用户认证和权限管理相关的HTTP请求
- * 包括用户登录、权限验证等功能
+ * 包括用户登录、注册、权限验证等功能
  */
 @RestController  // REST控制器，返回JSON数据
 @RequestMapping("/api/user")  // 用户API路径前缀
 @CrossOrigin(origins = "*")  // 允许跨域访问
-@Tag(name = "用户管理", description = "用户相关操作，包括登录认证、权限验证等功能")  // Swagger API分组
+@Tag(name = "用户管理", description = "用户相关操作，包括登录认证、注册、权限验证等功能")  // Swagger API分组
 public class UserController {
-    
+
+    @Autowired
+    private UserService userService;
 
     /**
      * 用户登录
@@ -28,10 +35,23 @@ public class UserController {
      */
     @PostMapping("/login")  // 处理POST请求
     @Operation(summary = "用户登录", description = "用户通过用户名和密码进行登录验证，返回用户信息和token")  // API描述
-    public Result<LoginResponseVo> login(@RequestBody LoginRequestVo loginRequestVo) {
-        return Result.success(null);
+    public Result<LoginResponseVo> login(@Valid @RequestBody LoginRequestVo loginRequestVo) {
+        LoginResponseVo vo = userService.login(loginRequestVo.getUsername(), loginRequestVo.getPassword());
+        return Result.success(vo);
     }
-    
+
+    /**
+     * 用户注册（默认注册为学生角色）
+     * @param registerRequestVo 注册请求
+     * @return 注册结果
+     */
+    @PostMapping("/register")  // 处理POST请求
+    @Operation(summary = "用户注册", description = "新用户注册，默认分配学生角色")  // API描述
+    public Result<Void> register(@Valid @RequestBody RegisterRequestVo registerRequestVo) {
+        userService.register(registerRequestVo.getUsername(), registerRequestVo.getPassword(), registerRequestVo.getRealName());
+        return Result.success("注册成功");
+    }
+
     /**
      * 检查用户权限
      * @param userId 用户ID
@@ -42,6 +62,6 @@ public class UserController {
     public Result<Boolean> checkAdmin(
             @Parameter(description = "用户ID") @PathVariable Long userId) {
 
-        return Result.success(true);
+        return Result.success(userService.checkAdmin(userId));
     }
-} 
+}
