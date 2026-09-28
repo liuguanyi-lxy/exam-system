@@ -1,8 +1,8 @@
 package com.atguigu.exam.service.impl;
 
 
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSON;
 import com.atguigu.exam.config.properties.KimiProperties;
 import com.atguigu.exam.entity.Question;
@@ -34,7 +34,7 @@ public class KimiAiServiceImpl implements KimiAiService {
     private KimiProperties kimiProperties;
     //构建生成ai评语，根据总分、最大分、题目数量、正确数量构建的提示词构建答题结果评价
     @Override
-    public String buildSummary(Integer totalScore, Integer maxScore, Integer questionCount, Integer correctCount) throws InterruptedException {
+    public String buildSummary(Integer totalScore, Integer maxScore, Integer questionCount, Integer correctCount) {
         //1. 构建提示词
         String summaryPrompt  = buildSummaryPrompt(totalScore,maxScore,questionCount,correctCount);
         //2. 调用kimiai
@@ -44,7 +44,7 @@ public class KimiAiServiceImpl implements KimiAiService {
     }
     //使用ai,进行简答题判断，返回判题结果
     @Override
-    public GradingResult gradingTextQuestion(Question question, String userAnswer, Integer maxScore) throws InterruptedException {
+    public GradingResult gradingTextQuestion(Question question, String userAnswer, Integer maxScore) {
         //1.生成ai调用的提示词
         String gradingPrompt = buildGradingPrompt(question, userAnswer, maxScore);
         //2.调用ai模型，获取返回结果
@@ -58,7 +58,8 @@ public class KimiAiServiceImpl implements KimiAiService {
             prompt.append("}");
          */
         try {
-            com.alibaba.fastjson2.JSONObject jsonObject = JSON.parseObject(content);
+            //AI可能把JSON包在```json ```代码块里返回，先提取纯JSON再解析
+            com.alibaba.fastjson2.JSONObject jsonObject = JSON.parseObject(extractJsonContent(content));
             Integer aiScore = jsonObject.getInteger("score");
             String feedback = jsonObject.getString("feedback");
             String reason = jsonObject.getString("reason");
@@ -203,7 +204,7 @@ public class KimiAiServiceImpl implements KimiAiService {
 
 
     /**
-     * 
+     *
      * 进行失败重试 给3次机会！！！
      *    kimi失败场景
      *      假失败 -》 调用成功 1. 结果格式不对  2. 速率限制 -> try
@@ -214,25 +215,16 @@ public class KimiAiServiceImpl implements KimiAiService {
      * @return 返回生成题目json 结果 / choices / message / content
      */
     @Override
-    /**
-     * 调用Kimi AI接口的方法
-     * 该方法包含重试机制，最多重试3次，用于处理网络波动或API限流等临时性问题
-     *
-     * @param prompt 输入的提示词，将作为用户消息发送给Kimi AI模型
-     * @return AI返回的内容字符串，从响应结构的choices[0].message.content中提取
-     * @throws InterruptedException 线程中断异常，在重试间隔期间可能被中断
-     * @throws RuntimeException 当重试3次后仍然失败，或返回内容为空时抛出运行时异常
-     */
-    public String callKimiAi(String prompt) throws InterruptedException {
+    public String callKimiAi(String prompt) {
 
         // 最多重试3次的配置常量
         int maxTry = 3;
         // 循环执行请求，支持失败重试机制
-        for (int i = 1; i <= 3; i++) {
+        for (int i = 1; i <= maxTry; i++) {
             try {
                 // 构建符合Kimi API规范的请求体结构
                 // 参考文档：https://platform.moonshot.cn/docs/api/chat#%E8%AF%B7%E6%B1%82%E5%86%85%E5%AE%B9
-                
+
                 // 创建用户消息对象，设置角色和提示词内容
                 Map<String,String> userMap = new HashMap<>();
                 userMap.put("role","user");
@@ -247,13 +239,13 @@ public class KimiAiServiceImpl implements KimiAiService {
                 requestBody.put("temperature", kimiProperties.getTemperature());
                 requestBody.put("max_tokens", kimiProperties.getMaxTokens());
 
-                // 发起POST请求调用Kimi API，设置超时时间为100秒
+                // 发起POST请求调用Kimi API，设置超时时间为30秒（判卷接口前端等待上限120秒，留出重试空间）
                 // 使用WebClient发送HTTP POST请求并获取响应结果
                 Mono<String> stringMono = webClient.post()           // 创建POST请求
                         .bodyValue(requestBody)                      // 设置请求体内容
                         .retrieve()                                 // 执行请求并获取响应
                         .bodyToMono(String.class)                   // 将响应体转换为Mono<String>
-                        .timeout(Duration.ofSeconds(100));           // 设置超时时间为100秒
+                        .timeout(Duration.ofSeconds(30));            // 设置超时时间为30秒
 
                 // 阻塞等待异步响应结果，将响应转换为同步处理方式
                 String result = stringMono.block();
@@ -280,13 +272,18 @@ public class KimiAiServiceImpl implements KimiAiService {
                 return content;
             }catch (Exception e){
                 // 记录当前尝试失败的次数
-                log.debug("第{}次尝试调用失败了！",i);
-                // 失败后等待1秒再进行重试，避免频繁请求
-                Thread.sleep(1000);
-                // 判断是否已达到最大重试次数，如达到则抛出异常
-                if(i == maxTry){
-                    e.printStackTrace();
+                log.warn("第{}次调用Kimi失败：{}", i, e.getMessage());
+                // 已达最大重试次数则抛出异常
+                if (i == maxTry) {
+                    log.error("Kimi调用重试{}次后仍然失败", maxTry, e);
                     throw new RuntimeException("已经重试3次！依然失败！请稍后再试！！");
+                }
+                // 指数退避等待（1s/2s/4s），避免频繁请求触发限流；中断时恢复中断标记
+                try {
+                    Thread.sleep(1000L << (i - 1));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("调用Kimi过程中线程被中断", ie);
                 }
             }
         }
@@ -305,17 +302,16 @@ public class KimiAiServiceImpl implements KimiAiService {
      * AI生成题目方法
      * @param request AI智能生成题目所需要的前端传入请求参数
      * @return 生成的题目列表
-     * @throws InterruptedException 线程中断异常
      */
-    public List<QuestionImportVo> aiGenerateQuestions(AiGenerateRequestVo request) throws InterruptedException {
+    public List<QuestionImportVo> aiGenerateQuestions(AiGenerateRequestVo request) {
         // 步骤1：执行参数校验工作（当前代码中未实现具体校验逻辑）
-        
+
         // 步骤2：根据AI生成题目的要求构建提示词
         String prompt = buildPrompt(request);
-        
+
         // 步骤3：根据提示词调用Kimi AI接口获取生成的题目内容
         String content = callKimiAi(prompt);
-        
+
         // 步骤4：解析AI返回的JSON格式结果
         // AI返回的数据格式示例：
         // ```json
@@ -323,20 +319,11 @@ public class KimiAiServiceImpl implements KimiAiService {
         //       "questions": [{}, {}, {}]
         //    }
         // ```
-        
-        // 查找JSON代码块的起始位置标记
-        int startIndex = content.indexOf("```json");
-        // 查找JSON代码块的结束位置标记
-        int endIndex = content.lastIndexOf("```");
-        
-        // 验证起始和结束标记都存在，且位置关系正确
-        if (startIndex != -1 && endIndex != -1 && startIndex < endIndex) {
-            // 提取真正的JSON字符串内容（跳过"```json"这7个字符）
-            String realResult = content.substring(startIndex + 7, endIndex);
-            
-            // 打印提取的JSON内容用于调试
-            System.out.println("realResult = " + realResult);
-            
+
+        // 提取JSON代码块（AI可能携带```json ```围栏或额外文字）
+        String realResult = extractJsonContent(content);
+
+        if (realResult != null) {
             // 将JSON字符串解析为JSONObject对象
             JSONObject jsonObject = JSONObject.parseObject(realResult);
             
@@ -424,6 +411,30 @@ public class KimiAiServiceImpl implements KimiAiService {
         throw new RuntimeException("ai生成题目json数据结构错误，无法正常解析！数据为：%s".formatted(content));
     }
 
+    /**
+     * 从AI返回内容中提取纯JSON字符串
+     * 兼容三种情况：```json ```围栏包裹、纯JSON、JSON前后带说明文字
+     * @param content AI原始返回内容
+     * @return 提取出的JSON字符串，提取不到时返回null
+     */
+    private String extractJsonContent(String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        int startIndex = content.indexOf("```json");
+        if (startIndex == -1) {
+            startIndex = content.indexOf("```");
+        }
+        int endIndex = content.lastIndexOf("```");
+        if (startIndex != -1 && endIndex != -1 && startIndex < endIndex) {
+            //跳过起始标记（```json 为7个字符，``` 为3个字符）和可能存在的换行
+            String body = content.substring(startIndex + (content.startsWith("```json", startIndex) ? 7 : 3), endIndex).trim();
+            return body.isEmpty() ? null : body;
+        }
+        //没有围栏时按纯JSON返回
+        return content.trim();
+    }
+
 
     /**
      * 根据传入的题目，学生答题答案和题目满分构建ai判卷提示词
@@ -447,9 +458,9 @@ public class KimiAiServiceImpl implements KimiAiService {
         prompt.append("标准答案：").append(question.getAnswer().getAnswer()).append("\n");
         prompt.append("满分：").append(maxScore).append("分\n\n");
 
-        // 添加学生答案部分，处理空答案情况
+        // 添加学生答案部分，处理空答案情况（未作答或null都视为未作答）
         prompt.append("【学生答案】\n");
-        prompt.append(userAnswer.trim().isEmpty() ? "（未作答）" : userAnswer).append("\n\n");
+        prompt.append(userAnswer == null || userAnswer.trim().isEmpty() ? "（未作答）" : userAnswer).append("\n\n");
 
         // 添加判卷要求部分
         prompt.append("【判卷要求】\n");

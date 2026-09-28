@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * Kimi AI服务接口
- * 用于调用Kimi API生成题目
+ * 用于调用Kimi API生成题目、判卷简答题、生成考试总评
  */
 public interface KimiAiService {
 
@@ -23,7 +23,7 @@ public interface KimiAiService {
      * @param correctCount
      * @return
      */
-    String buildSummary(Integer totalScore, Integer maxScore, Integer questionCount, Integer correctCount) throws InterruptedException;
+    String buildSummary(Integer totalScore, Integer maxScore, Integer questionCount, Integer correctCount);
 
 
     /**
@@ -33,7 +33,7 @@ public interface KimiAiService {
      * @param maxScore
      * @return
      */
-     GradingResult gradingTextQuestion(Question question, String userAnswer, Integer maxScore) throws InterruptedException;
+     GradingResult gradingTextQuestion(Question question, String userAnswer, Integer maxScore);
 
 
     /**
@@ -44,16 +44,16 @@ public interface KimiAiService {
     String buildPrompt(AiGenerateRequestVo request);
 
     /**
-     * 封装调用kimi模型，传入提示词，最终返结果
+     * 封装调用kimi模型，传入提示词，带3次重试，失败抛RuntimeException
      * @param prompt
      * @return 返回生成题目json 结果 / choices / message / content
      */
-    String callKimiAi(String prompt) throws InterruptedException;
+    String callKimiAi(String prompt);
 
     /**
      * ai题目信息生成
      * @param request
      * @return
      */
-    List<QuestionImportVo> aiGenerateQuestions(AiGenerateRequestVo request) throws InterruptedException;
+    List<QuestionImportVo> aiGenerateQuestions(AiGenerateRequestVo request);
 }

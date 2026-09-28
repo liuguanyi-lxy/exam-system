@@ -27,17 +27,16 @@ public interface ExamService extends IService<ExamRecord> {
     ExamRecord customGetExamRecordById(Integer id);
 
     /**
-     * 提交考试答案
+     * 提交考试答案：只保存答题记录并结束考试（事务内），判卷由 /grade 接口触发
      * @param examRecordId
      * @param answers
      */
-    void customSubmitAnswer(Integer examRecordId, List<SubmitAnswerVo> answers) throws InterruptedException;
+    void customSubmitAnswer(Integer examRecordId, List<SubmitAnswerVo> answers);
 
     /**
-     * ai试卷批阅功能
+     * ai试卷批阅功能（客观题本地判卷，简答题并行调用AI，已批阅的记录直接返回）
      * @param examRecordId
      * @return
      */
-    ExamRecord gradeExam(Integer examRecordId) throws InterruptedException;
-} 
- 
+    ExamRecord gradeExam(Integer examRecordId);
+}

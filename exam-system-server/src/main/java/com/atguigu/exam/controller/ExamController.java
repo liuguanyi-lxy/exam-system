@@ -48,10 +48,10 @@ public class ExamController {
      * @param answers      答题列表，前端会记录学生答题的数据，然后序列化后用SubmitAnswerVo对象接收
      */
     @PostMapping("/{examRecordId}/submit")  // 处理POST请求
-    @Operation(summary = "提交考试答案", description = "学生提交考试答案，系统记录答题情况")  // API描述
+    @Operation(summary = "提交考试答案", description = "学生提交考试答案，系统记录答题情况并结束考试；AI判卷由结果页调用 /grade 接口触发")  // API描述
     public Result<Void> submitAnswers(
-            @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId, 
-            @RequestBody List<SubmitAnswerVo> answers) throws InterruptedException {
+            @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId,
+            @RequestBody List<SubmitAnswerVo> answers) {
             examService.customSubmitAnswer(examRecordId,answers);
             log.info("提交答案接口调用成功！");
             return Result.success("答案提交成功");
@@ -62,9 +62,9 @@ public class ExamController {
      * @param examRecordId 考试记录ID
      */
     @PostMapping("/{examRecordId}/grade")  // 处理POST请求
-    @Operation(summary = "AI自动批阅", description = "使用AI技术自动批阅试卷，特别是简答题的智能评分,返回批阅后的考试记录")  // API描述
+    @Operation(summary = "AI自动批阅", description = "使用AI技术自动批阅试卷，特别是简答题的智能评分,返回批阅后的考试记录；已批阅的记录直接返回不重复判卷")  // API描述
     public Result<ExamRecord> gradeExam(
-            @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId) throws InterruptedException {
+            @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId) {
              ExamRecord examRecord = examService.gradeExam(examRecordId);
              return Result.success(examRecord, "试卷批阅完成");
     }

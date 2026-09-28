@@ -1,5 +1,6 @@
 package com.atguigu.exam.service.impl;
 
+import com.atguigu.exam.common.ExamStatus;
 import com.atguigu.exam.entity.*;
 import com.atguigu.exam.mapper.ExamRecordMapper;
 import com.atguigu.exam.service.*;
@@ -12,15 +13,22 @@ import com.baomidou.mybatisplus.core.toolkit.ObjectUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 
@@ -38,6 +46,9 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     private PaperQuestionService paperQuestionService;
     @Autowired
     private KimiAiService kimiAiService;
+    @Autowired
+    @Qualifier("examExecutor")
+    private ThreadPoolExecutor examExecutor;
     /**
      * 开始考试业务
      * @param startExamVo
@@ -50,8 +61,9 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
         examRecordLambdaQueryWrapper.eq(ExamRecord::getStudentName, startExamVo.getStudentName());
         examRecordLambdaQueryWrapper.eq(ExamRecord::getExamId, startExamVo.getPaperId());
-        examRecordLambdaQueryWrapper.eq(ExamRecord::getStatus,"进行中");
-        ExamRecord examRecord = this.getOne(examRecordLambdaQueryWrapper);
+        examRecordLambdaQueryWrapper.eq(ExamRecord::getStatus, ExamStatus.IN_PROGRESS);
+        //getOne传入false：存在多条进行中记录时取第一条而不是抛异常，避免历史脏数据导致无法开考
+        ExamRecord examRecord = this.getOne(examRecordLambdaQueryWrapper, false);
         if (examRecord != null) {
             log.info("%s同学的该考试正在进行中，请勿重复考试".formatted(startExamVo.getStudentName()));
             return examRecord;
@@ -60,7 +72,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         ExamRecord record = new ExamRecord();
         record.setStudentName(startExamVo.getStudentName());
         record.setExamId(startExamVo.getPaperId());
-        record.setStatus("进行中");
+        record.setStatus(ExamStatus.IN_PROGRESS);
         record.setWindowSwitches(0);
         record.setStartTime(LocalDateTime.now());//使用的是本地的时区时间
         //进行试卷记录保存
@@ -92,7 +104,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         LambdaQueryWrapper<AnswerRecord> answerRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
         answerRecordLambdaQueryWrapper.eq(AnswerRecord::getExamRecordId, id);
         List<AnswerRecord> answerRecordList = answerRecordService.list(answerRecordLambdaQueryWrapper);
-        if(ObjectUtils.isNotEmpty(answerRecordList)){
+        if(ObjectUtils.isNotEmpty(answerRecordList) && paper != null && paper.getQuestions() != null){
             //试卷对象中的题目列表是按照选择题、判断题、简答题的形式排过序的，获取其题目ID列表
             List<Long> questionIdList = paper.getQuestions().stream().map(Question::getId).collect(Collectors.toList());
             //将答题记录列表按照题目ID列表的顺序进行排序
@@ -104,11 +116,14 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     }
     /**
      * 提交考试答案
+     * 只负责保存答题记录并结束考试，判卷由结果页调用 /grade 接口触发，
+     * 避免交卷请求同步等待AI判卷导致前端30秒超时
      * @param examRecordId
      * @param answers
      */
     @Override
-    public void customSubmitAnswer(Integer examRecordId, List<SubmitAnswerVo> answers) throws InterruptedException {
+    @Transactional(rollbackFor = Exception.class)
+    public void customSubmitAnswer(Integer examRecordId, List<SubmitAnswerVo> answers) {
         //将答题记录保存在试卷记录和题目的关联表，也就答题记录表，记录考试记录的ID、题目ID、学生答案。然后再修改考试记录的考试状态和结束时间
         //1.将前端传入的提交答案列表保存到答题记录表
         //首先要对提交答案列表进行判空,提交答案列表为空就不用保存答题记录
@@ -124,28 +139,38 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
 
         //2.修改考试记录的考试状态和结束时间
         ExamRecord examRecord = getById(examRecordId);
-        examRecord.setStatus("已结束");
+        if (examRecord == null) {
+            throw new RuntimeException("ID为%s的考试记录不存在，提交失败！".formatted(examRecordId));
+        }
+        examRecord.setStatus(ExamStatus.FINISHED);
         examRecord.setEndTime(LocalDateTime.now());
         //更新对应的考试记录数据
         this.updateById(examRecord);
-        //调用判卷接口
-        gradeExam(examRecordId);
     }
     /**
      * ai试卷批阅功能
+     * 客观题本地即时判卷，简答题的AI调用先并行提交到共享线程池再统一等待，
+     * 总耗时约等于一次AI调用，而不是简答题数量 × 单次调用时长
      * @param examRecordId
      * @return
      */
     @Override
-    public ExamRecord gradeExam(Integer examRecordId) throws InterruptedException {
+    public ExamRecord gradeExam(Integer examRecordId) {
         //1.获取考试记录对象，包含其关联的试卷信息和答题记录信息
         ExamRecord examRecord = customGetExamRecordById(examRecordId);
+        if (examRecord == null) {
+            throw new RuntimeException("ID为%s的考试记录不存在，无法判卷".formatted(examRecordId));
+        }
+        //已批阅过的记录直接返回：结果页刷新时不会重复消耗AI调用
+        if (ExamStatus.GRADED.equals(examRecord.getStatus())) {
+            return examRecord;
+        }
         //获取考试记录关联的试卷信息，进行判空，如果为空就是考试对应的试卷已经被删除，无法进行成绩判定
         Paper paper = examRecord.getPaper();
         log.info("开始判卷，试卷信息为：{}",paper);
         if(paper == null){
             //试卷为空则给考试记录状态修改成已批阅
-            examRecord.setStatus("已批阅");
+            examRecord.setStatus(ExamStatus.GRADED);
             //本次考试评语设置为出错问题
             examRecord.setSummary("考试对应的试卷已被删除，无法进行成绩判定");
             //更新考试记录
@@ -156,7 +181,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         List<AnswerRecord> answerRecordList = examRecord.getAnswerRecords();
         if(ObjectUtils.isEmpty(answerRecordList)){
             //答题记录为空则给考试记录状态修改成已批阅
-            examRecord.setStatus("已批阅");
+            examRecord.setStatus(ExamStatus.GRADED);
             //本次考试评语设置为出错问题
             examRecord.setSummary("考生没有作答成绩为0");
             //更新考试记录
@@ -165,10 +190,28 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         }
         int correctNumber = 0 ; //正确题目数量
         int totalScore = 0; //总得分
+        List<Question> paperQuestions = paper.getQuestions() == null ? new ArrayList<>() : paper.getQuestions();
         //将试卷包含的题目列表转换成题目ID对应的题目对象形式的map，方便根据题目ID取出对应的题目对象
-        Map<Long, Question> questionMap = paper.getQuestions().stream().collect(Collectors.toMap(Question::getId, q -> q));
+        Map<Long, Question> questionMap = paperQuestions.stream().collect(Collectors.toMap(Question::getId, q -> q));
         log.info("试卷题目列表为：{}",questionMap);
-        //3.遍历答题记录列表，进行判卷，期间记录正确题目数量和总得分，并且修改每条答题记录的状态，得分情况、是否正确以及ai评语
+        //一次性查出本试卷每道题的分值，key为题目ID，避免在循环里逐条查库
+        Map<Long, BigDecimal> scoreMap = paperQuestionService.list(
+                        new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, paper.getId())).stream()
+                .filter(pq -> pq.getQuestionId() != null && pq.getScore() != null)
+                .collect(Collectors.toMap(PaperQuestion::getQuestionId, PaperQuestion::getScore, (a, b) -> a));
+        //3.先把所有简答题的AI判卷任务并行提交到共享线程池
+        Map<Integer, CompletableFuture<GradingResult>> aiFutures = new HashMap<>();
+        for (AnswerRecord answerRecord : answerRecordList) {
+            Question question = questionMap.get(answerRecord.getQuestionId() == null ? null : answerRecord.getQuestionId().longValue());
+            if (question == null || !"TEXT".equals(question.getType())) {
+                continue;
+            }
+            BigDecimal paperScore = scoreMap.get(answerRecord.getQuestionId().longValue());
+            Integer maxScore = paperScore == null ? null : paperScore.intValue();
+            aiFutures.put(answerRecord.getQuestionId(),
+                    CompletableFuture.supplyAsync(() -> safeGradeTextQuestion(question, answerRecord.getUserAnswer(), maxScore), examExecutor));
+        }
+        //4.遍历答题记录列表，进行判卷，期间记录正确题目数量和总得分，并且修改每条答题记录的状态，得分情况、是否正确以及ai评语
         for (AnswerRecord answerRecord : answerRecordList) {
             //使用ai判断简答题可能会出错，但是为了保证后面的题目都能进行判断就不报错，捕获异常进行题目对应答题记录的信息修改然后继续循环
             try {
@@ -178,30 +221,37 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                     log.warn("题目ID: {} 在试卷中不存在", answerRecord.getQuestionId());
                     throw new RuntimeException("题目数据不存在");
                 }
-                
+
                 // 检查题目是否有答案
                 if (question.getAnswer() == null || question.getAnswer().getAnswer() == null) {
                     log.warn("题目ID: {} 缺少标准答案", question.getId());
                     throw new RuntimeException("题目缺少标准答案");
                 }
-                
-                //查询试卷题目关联表中该题目对应的分数（需要同时指定paperId和questionId确保唯一性）
-                LambdaQueryWrapper<PaperQuestion> paperQuestionLambdaQueryWrapper = new LambdaQueryWrapper<>();
-                paperQuestionLambdaQueryWrapper.eq(PaperQuestion::getPaperId, paper.getId()).eq(PaperQuestion::getQuestionId, question.getId());
-                PaperQuestion paperQuestion = paperQuestionService.getOne(paperQuestionLambdaQueryWrapper);
-                if (paperQuestion == null || paperQuestion.getScore() == null) {
+
+                //查询试卷题目关联表中该题目对应的分数
+                BigDecimal paperScore = scoreMap.get(answerRecord.getQuestionId().longValue());
+                if (paperScore == null) {
                     log.warn("题目ID: {} 在试卷中未设置分数", question.getId());
                     throw new RuntimeException("题目分数未设置");
                 }
-                Integer score = paperQuestion.getScore().intValue();
+                Integer score = paperScore.intValue();
                 //获取题目的正确答案
-                String CorrectAnswer = question.getAnswer().getAnswer();
+                String correctAnswer = question.getAnswer().getAnswer();
                 //获取学生答案
                 String userAnswer = answerRecord.getUserAnswer();
                 //2.判断学生答案是否正确，先分辨题目类型
                 if("TEXT".equals(question.getType())){
-                    //简答题使用AI进行评卷，用GradingResult接收判卷结果
-                    GradingResult gradingResult = kimiAiService.gradingTextQuestion(question, userAnswer, score);
+                    //简答题使用AI进行评卷，从并行任务中取回判卷结果，最多等待2分钟
+                    GradingResult gradingResult;
+                    try {
+                        gradingResult = aiFutures.get(answerRecord.getQuestionId()).get(2, TimeUnit.MINUTES);
+                    } catch (Exception e) {
+                        log.error("题目ID: {} AI判卷任务执行失败", answerRecord.getQuestionId(), e);
+                        gradingResult = null;
+                    }
+                    if (gradingResult == null) {
+                        throw new RuntimeException("AI判题服务异常，请稍后重试");
+                    }
                     //设置该题目对应的得分
                     answerRecord.setScore(gradingResult.getScore());
                     //根据评卷的分数判断该答题正确情况和扣分原因以及反馈
@@ -223,7 +273,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                     }
                 }else{
                     //客观题（选择题/判断题）智能比对：兼容 字母/选项内容/中文/英文 多种答案格式
-                    if(isObjectiveAnswerCorrect(question, CorrectAnswer, userAnswer))
+                    if(isObjectiveAnswerCorrect(question, correctAnswer, userAnswer))
                     {
                         //设置该题目对应的得分
                         answerRecord.setScore(score);
@@ -258,16 +308,31 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                 correctNumber++;
             }
         }
-        //4.更新答题记录列表
+        //5.更新答题记录列表
         answerRecordService.updateBatchById(answerRecordList);
-        //5.根据得分情况、试卷总分数、试卷总题目数、答题正确题目数生成ai评价总结
-        String summary = kimiAiService.buildSummary(totalScore, paper.getTotalScore().intValue(), paper.getQuestions().size(), correctNumber);
-        //6.更新考试记录信息
+        //6.根据得分情况、试卷总分数、试卷总题目数、答题正确题目数生成ai评价总结
+        String summary = kimiAiService.buildSummary(totalScore, paper.getTotalScore().intValue(), paperQuestions.size(), correctNumber);
+        //7.更新考试记录信息
         examRecord.setSummary(summary);
         examRecord.setScore(totalScore);
-        examRecord.setStatus("已批阅");
+        examRecord.setStatus(ExamStatus.GRADED);
         this.updateById(examRecord);
         return examRecord;
+    }
+
+    /**
+     * 线程池内执行的简答题AI判卷，任何异常都吞掉并返回null，由主流程统一按判卷失败处理
+     */
+    private GradingResult safeGradeTextQuestion(Question question, String userAnswer, Integer maxScore) {
+        try {
+            if (maxScore == null) {
+                throw new RuntimeException("题目分数未设置");
+            }
+            return kimiAiService.gradingTextQuestion(question, userAnswer == null ? "" : userAnswer, maxScore);
+        } catch (Exception e) {
+            log.error("简答题AI判卷失败，题目ID: {}", question.getId(), e);
+            return null;
+        }
     }
 
     /**
@@ -277,7 +342,8 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
      *  - 多选题：标准答案可能是"AB"或内容列表，学生答案用逗号分隔的内容或字母
      *  - 判断题：标准答案存 TRUE/FALSE，学生答案可能是 正确/错误/对/错
      */
-    private boolean isObjectiveAnswerCorrect(Question question, String correctAnswer, String userAnswer) {
+    //包级可见便于单元测试覆盖判卷比对逻辑
+    boolean isObjectiveAnswerCorrect(Question question, String correctAnswer, String userAnswer) {
         if (correctAnswer == null || userAnswer == null) return false;
         String user = userAnswer.trim();
         if (user.isEmpty()) return false;
@@ -300,11 +366,19 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                 boolean correctIsLetter = isPureLetterSet(correctSet);
 
                 if (userIsLetter && correctIsLetter) {
-                    // 两者都是字母（如 "AB" vs "A,B"）
-                    return userSet.equals(correctSet);
+                    // 两者都是字母（如 "AB" vs "A,B" vs "a、b"）→ 按字符集合比较，兼容连写与大小写
+                    return toLetterCharSet(user).equals(toLetterCharSet(correctAnswer));
                 } else if (userIsLetter) {
-                    // 学生答字母，标准答内容 -> 内容映射到字母比较
-                    return userSet.equals(mapContentsToLetters(correctAnswer, choices));
+                    // 学生答字母，标准答内容 -> 内容映射到字母比较（字母统一大写）
+                    Set<String> expected = new HashSet<>();
+                    for (String letter : mapContentsToLetters(correctAnswer, choices)) {
+                        expected.add(letter.toUpperCase());
+                    }
+                    Set<String> actual = new HashSet<>();
+                    for (String letter : userSet) {
+                        actual.add(letter.toUpperCase());
+                    }
+                    return actual.equals(expected);
                 } else if (correctIsLetter) {
                     // 学生答内容，标准答字母 -> 字母映射到内容比较
                     return userSet.equals(mapLettersToContents(correctAnswer, choices));
@@ -315,8 +389,8 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
             }
 
             // 单选题：逐一尝试各种格式匹配
-            // 1) 直接字母比对
-            if (normalizeChoice(correctAnswer).equals(normalizeChoice(user))) return true;
+            // 1) 直接字母比对（忽略大小写，如 "A" vs "a"）
+            if (normalizeChoice(correctAnswer).equalsIgnoreCase(normalizeChoice(user))) return true;
             // 2) 标准答案字母 -> 学生答案内容
             if (matchLetterToContent(correctAnswer, user, choices)) return true;
             // 3) 标准答案内容 -> 学生答案字母
@@ -405,6 +479,16 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
             if (!s.matches("[A-Za-z]+")) return false;
         }
         return true;
+    }
+
+    /** 把字母串拆成大写字母字符集合，如 "A,b" -> {'A','B'}，兼容连写 "AB" */
+    private Set<Character> toLetterCharSet(String letters) {
+        Set<Character> set = new HashSet<>();
+        if (letters == null) return set;
+        for (char c : letters.toUpperCase().toCharArray()) {
+            if (c >= 'A' && c <= 'Z') set.add(c);
+        }
+        return set;
     }
 
     /** 标准答案字母串 -> 选项内容集合 */

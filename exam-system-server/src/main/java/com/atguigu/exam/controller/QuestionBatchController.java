@@ -102,7 +102,7 @@ public class QuestionBatchController {
     @Operation(summary = "AI智能生成题目", description = "使用AI技术根据指定主题和要求智能生成题目，支持预览后再决定是否导入")  // API描述
     public Result<List<QuestionImportVo>> generateQuestionsByAi(
             //// 当请求到达时，Spring会自动验证request对象,根据AiGenerateRequestVo类的属性上的要求进行验证
-            @RequestBody @Validated AiGenerateRequestVo request) throws InterruptedException {
+            @RequestBody @Validated AiGenerateRequestVo request) {
         List<QuestionImportVo> questionImportVos = kimiAiService.aiGenerateQuestions(request);
         log.info("AI生成标题为{}的题目成功，计划生成{}道题目，实际生成{}道题目",request.getTopic(),request.getCount(),questionImportVos.size());
         return Result.success(questionImportVos);

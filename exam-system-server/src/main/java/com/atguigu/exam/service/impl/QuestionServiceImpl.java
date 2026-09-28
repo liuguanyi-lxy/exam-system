@@ -20,6 +20,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +50,13 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     private RedisUtils redisUtils;
     @Autowired
     private PaperQuestionMapper paperQuestionMapper;
+    @Autowired
+    @Qualifier("examExecutor")
+    private ThreadPoolExecutor examExecutor;
+    //懒加载注入自身代理：批量导入时通过代理调用事务方法，避免同类直调绕过@Transactional
+    @Autowired
+    @Lazy
+    private QuestionService self;
     // 自定义分页查询
     @Override
     public void customPageQuery(Page<Question> questionPage, QuestionPageVo questionPageVo) {
@@ -79,15 +89,12 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             throw new RuntimeException("查询题目详情失败,题目可能被提前删除");
         }
         //查询题目详情一次就需要对其进行一次热题更新，根据访问题目次数进行排序
-// 创建一个新的线程并启动
         /*不阻塞主流程
         用户查询题目详情是主要需求，必须快速返回
         更新访问次数是辅助功能（用于热门题目排序），可以后台慢慢执行
-        如果同步执行，Redis 操作的网络延迟会影响接口响应时间*/
-        new Thread(() -> {
-    // 调用incrementQuestion方法，传入id参数
-            incrementQuestion(id);
-        }).start();
+        如果同步执行，Redis 操作的网络延迟会影响接口响应时间
+        使用全局共享线程池而不是 new Thread，避免频繁请求时线程创建开销*/
+        examExecutor.execute(() -> incrementQuestion(id));
         return question;
     }
     @Transactional(rollbackFor = Exception.class)
@@ -109,10 +116,16 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         }
         //根据题目对象获取答案对象，并且设置保存题目后回显的id
         QuestionAnswer answer = question.getAnswer();
+        if (answer == null) {
+            throw new RuntimeException("题目%s缺少答案信息，保存失败！".formatted(question.getTitle()));
+        }
         answer.setQuestionId(question.getId());
         //判断题目是否为判断题，决定是否添加选项对象到选项表
         if ("CHOICE".equals(question.getType())) {
             List<QuestionChoice> choices = question.getChoices();
+            if (choices == null) {
+                throw new RuntimeException("选择题%s缺少选项信息，保存失败！".formatted(question.getTitle()));
+            }
             //选项答案字符串
             StringBuilder sb = new StringBuilder();
             //对选项列表进行循环，获取其中的选项对象，然后设置选项对应的题目ID，再调用questionCHOICEMapper的insert方法进行保存
@@ -139,7 +152,7 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     }
     //自定义修改题目及其答案选项信息
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void customUpdateQuestion(Question question) {
         //题目的校验,题目不同id名称不能相同
         LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
@@ -156,9 +169,15 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         }
         //保存答案信息
         QuestionAnswer answer = question.getAnswer();
-        //判断题目是否为选择题，如果是，则对选项进行保存
+        if (answer == null) {
+            throw new RuntimeException("题目%s缺少答案信息，修改失败！".formatted(question.getTitle()));
+        }
+        //判断题目是否为选择题，如果是，则对选项进行重新保存
         if ("CHOICE".equals(question.getType())) {
             List<QuestionChoice> choices = question.getChoices();
+            if (choices == null) {
+                throw new RuntimeException("选择题%s缺少选项信息，修改失败！".formatted(question.getTitle()));
+            }
             //根据题目ID删除该题目下的所有原选项
             LambdaQueryWrapper<QuestionChoice> questionChoiceLambdaQueryWrapper = new LambdaQueryWrapper<>();
             questionChoiceLambdaQueryWrapper.eq(QuestionChoice::getQuestionId, question.getId());
@@ -166,7 +185,7 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             //选项答案字符串
             StringBuilder sb = new StringBuilder();
             //对选项列表进行循环，获取其中的选项对象，然后设置选项对应的题目ID，再调用questionCHOICEMapper的insert方法进行保存
-            //并且对每个选项的isCorrect属性进行判断，如果为true,则对答案字符串进行拼接
+            //并且对每个选项的isCorrect属性进行判断，如果为true，则对答案字符串进行拼接
             for (int i = 0; i < choices.size(); i++) {
                 QuestionChoice questionChoice = choices.get(i);
                 // 清除ID，让数据库自动生成新的ID
@@ -181,13 +200,19 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     //答案拼接
                     sb.append((char)('A'+i));
                 }
-
-            answer.setAnswer(sb.toString());
-
-        //保存答案对象
-        answer.setQuestionId(question.getId());
-        questionAnswerMapper.updateById(answer);
             }
+            answer.setAnswer(sb.toString());
+        }
+        //答案的修改对选择题、判断题、简答题都生效：
+        //按题目ID查出答案行再更新，不依赖前端回传答案表主键
+        answer.setQuestionId(question.getId());
+        QuestionAnswer existAnswer = questionAnswerMapper.selectOne(
+                new LambdaQueryWrapper<QuestionAnswer>().eq(QuestionAnswer::getQuestionId, question.getId()));
+        if (existAnswer != null) {
+            answer.setId(existAnswer.getId());
+            questionAnswerMapper.updateById(answer);
+        } else {
+            questionAnswerMapper.insert(answer);
         }
     }
     //自定义删除题目信息
@@ -238,11 +263,11 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             try {
                 //将QuestionImportVo对象转换成Question对象
                 Question question =convertQuestionImportVoToQuestion(questionImportVo);
-                //调用自定义保存题目信息的方法
-                customSaveQuestion(question);
+                //通过代理对象调用，让customSaveQuestion上的@Transactional生效（同类this调用会绕过事务代理）
+                self.customSaveQuestion(question);
                 successCount++;
             } catch (Exception e) {
-                log.error("导入题目失败，题目内容为：{}", questionImportVo);
+                log.error("导入题目失败，题目内容为：{}，原因：{}", questionImportVo.getTitle(), e.getMessage());
             }
         }
         return successCount;

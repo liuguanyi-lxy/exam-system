@@ -7,6 +7,9 @@ logging:
     root: info
 # Spring框架配置部分
 spring:
+  profiles:
+    #默认激活local，私密配置统一放 application-local.yaml（已被.gitignore排除，不要提交）
+    active: ${SPRING_PROFILES_ACTIVE:local}
   # Jackson日期格式化配置
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss  # 日期格式
@@ -14,14 +17,15 @@ spring:
   # Redis数据库配置
   data:
     redis:
-      host: REDACTED_LAN_IP  # Redis服务器地址
-      port: 6379  # Redis服务器端口
+      host: ${REDIS_HOST:127.0.0.1}  # Redis服务器地址，实际地址在 application-local.yaml 覆盖
+      port: ${REDIS_PORT:6379}  # Redis服务器端口
+      password: ${REDIS_PASSWORD:}  # Redis密码，公网Redis务必开启requirepass
   # 数据源配置
   datasource:
     type: com.zaxxer.hikari.HikariDataSource  # 使用HikariCP作为数据源实现
-    url: jdbc:mysql:///exam_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8  # 数据库连接URL
-    username: root  # 数据库用户名
-    password: 112804  # 数据库密码
+    url: jdbc:mysql://${DB_HOST:localhost}:3306/exam_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8  # 数据库连接URL
+    username: ${DB_USERNAME:root}  # 数据库用户名
+    password: ${DB_PASSWORD:}  # 数据库密码，实际密码在 application-local.yaml 覆盖
     # Hikari连接池配置
     hikari:
       connection-test-query: SELECT 1 # 自动检测连接
@@ -38,40 +42,33 @@ spring:
       max-file-size: 100MB  # 最大文件大小
 
 # MyBatis-Plus配置
-#用于打印框架生成的sql语句，便于调试
+#用于打印框架生成的sql语句，便于调试（走slf4j，不再直接刷stdout）
 mybatis-plus:
   configuration:
-    # 配置日志实现类为标准输出实现，用于打印SQL语句
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 配置日志实现类为slf4j实现
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
     # 开启自动驼峰命名规则映射，即从数据库下划线命名到Java驼峰命名的自动转换
     auto-map-underscore-to-camel-case: true
     # 设置自动映射行为为full，表示自动映射所有非主键的列给JAVA对象的字段，在写mapper.xml文件时，可以省略resultMap标签的result属性,只写主键的属性
     auto-mapping-behavior: full
 
-# minio的配置
-# MinIO对象存储服务配置信息
+# minio的配置（账号密码在 application-local.yaml 覆盖）
 minio:
-  # MinIO服务器的访问地址
-  endpoint: http://REDACTED_LAN_IP:9000
-  # 访问MinIO服务器的用户名
-  username: minioadmin
-  # 访问MinIO服务器的密码
-  password: lxy112804
-  # 用于存储文件的桶名称
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  username: ${MINIO_USERNAME:}
+  password: ${MINIO_PASSWORD:}
   bucket-name: exam0625
 
-# kimi的配置
-# 配置文件，用于定义与Kimi API相关的参数
+# kimi的配置（api-key在 application-local.yaml 覆盖，绝不提交到代码库）
 kimi:
-  # API相关配置
   api:
-    # 指定使用的模型名称为moonshot-v1-32k
     model: moonshot-v1-32k
-    # API的请求URI地址
     uri: https://api.moonshot.cn/v1/chat/completions
-    # API密钥，用于身份验证
-    api-key: REDACTED_API_KEY
-    # 最大令牌数，限制生成内容的最大长度
+    api-key: ${KIMI_API_KEY:}
     max-tokens: 4096
-    # 温度参数，控制生成内容的随机性，值越小输出越确定
     temperature: 0.3
+
+# JWT登录鉴权配置
+jwt:
+  secret: ${JWT_SECRET:exam-system-jwt-secret-key-2026-for-demo-only-please-change-in-production}
+  expire: 604800000 #token有效期7天（毫秒）

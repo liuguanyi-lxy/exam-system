@@ -118,7 +118,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper,Category> im
             ));
         //获取分类对应的题目数量
         Long count = collect.getOrDefault(id, 0L);
-        System.out.println("分类 " + category.getName() + " 下的题目数量: " + count);
+        log.debug("分类 {} 下的题目数量: {}", category.getName(), count);
         if(count!=0){
             throw new RuntimeException("该分类%s下有%s道题目，不能删除".formatted(category.getName(),count));
         }
