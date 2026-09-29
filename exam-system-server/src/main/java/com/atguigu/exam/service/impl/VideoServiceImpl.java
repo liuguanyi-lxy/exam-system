@@ -15,7 +15,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,6 +31,7 @@ import java.util.Map;
  * 视频Service实现类
  * 提供视频管理的完整业务逻辑实现
  */
+@Slf4j
 @Service
 public class VideoServiceImpl implements VideoService {
 
@@ -140,37 +143,45 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean toggleVideoLike(Long videoId, HttpServletRequest request) {
         if (request == null) {
             throw new RuntimeException("请求信息为空");
         }
-        
+
         String userIp = IpUtils.getClientIp(request);
         String userAgent = request.getHeader("User-Agent");
-        
+
         // 检查是否已点赞
         boolean isLiked = videoLikeMapper.isLikedByIp(videoId, userIp);
-        
+
         if (isLiked) {
-            // 取消点赞
-            videoLikeMapper.delete(
+            // 取消点赞：delete返回0说明记录刚被并发请求取消，此时不再重复扣减点赞数
+            int deleted = videoLikeMapper.delete(
                 new LambdaQueryWrapper<VideoLike>()
                     .eq(VideoLike::getVideoId, videoId)
                     .eq(VideoLike::getUserIp, userIp)
             );
-            // 减少点赞数
-            videoMapper.decrementLikeCount(videoId);
+            if (deleted > 0) {
+                // 减少点赞数
+                videoMapper.decrementLikeCount(videoId);
+            }
             return false;
         } else {
-            // 添加点赞
+            // 添加点赞：并发双击时靠 video_likes 表的唯一索引 uk_video_userip 兜底，
+            // 撞索引说明已经点过赞，直接返回已点赞状态，不重复计数
             VideoLike videoLike = new VideoLike();
             videoLike.setVideoId(videoId);
             videoLike.setUserIp(userIp);
             videoLike.setUserAgent(userAgent);
             videoLike.setCreatedAt(LocalDateTime.now());
-            
-            videoLikeMapper.insert(videoLike);
+
+            try {
+                videoLikeMapper.insert(videoLike);
+            } catch (DuplicateKeyException e) {
+                log.warn("IP:{} 对视频:{} 并发重复点赞，已由唯一索引拦截", userIp, videoId);
+                return true;
+            }
             // 增加点赞数
             videoMapper.incrementLikeCount(videoId);
             return true;

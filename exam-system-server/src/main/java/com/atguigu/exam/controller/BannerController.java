@@ -22,7 +22,6 @@ import java.util.List;
  */
 @RestController  // REST控制器，返回JSON数据
 @RequestMapping("/api/banners")  // 轮播图API路径前缀
-@CrossOrigin  // 允许跨域访问，主要作用，当浏览器发起跨域请求时(即前端和后端运行在不同的域名、端口或协议下),浏览器会出于安全考虑阻止这些请求。@CrossOrigin 注解用于允许特定的跨域请求访问后端接口
 @Tag(name = "轮播图管理", description = "轮播图相关操作，包括图片上传、轮播图增删改查、状态管理等功能")  // Swagger API分组
 @Slf4j
 public class BannerController {

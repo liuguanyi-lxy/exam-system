@@ -344,9 +344,11 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                 //将排序后的id集合赋值给ids
                 ids = idsList;
                 log.debug("从Redis中获取到的热门题目id集合为：{}", ids);
-                //根据热门题目id列表查询对应的题目列表
-                for(Long id:ids){
-                    Question question = getById(id);
+                //根据热门题目id列表批量查询题目（原来循环单查是N+1次SQL），再按榜单顺序组装
+                Map<Long, Question> questionMap = listByIds(idsList).stream()
+                        .collect(Collectors.toMap(Question::getId, q -> q));
+                for (Long id : ids) {
+                    Question question = questionMap.get(id);
                     if (question != null) {
                         popularQuestion.add(question);
                     }

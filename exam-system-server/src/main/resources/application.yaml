@@ -72,3 +72,12 @@ kimi:
 jwt:
   secret: ${JWT_SECRET:exam-system-jwt-secret-key-2026-for-demo-only-please-change-in-production}
   expire: 604800000 #token有效期7天（毫秒）
+
+# 接口文档：生产部署时通过环境变量 KNIFE4J_PRODUCTION=true 关闭文档页面
+knife4j:
+  production: ${KNIFE4J_PRODUCTION:false}
+
+# 跨域白名单（集中配置在 WebConfig，生产同源部署时无需修改）
+exam:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

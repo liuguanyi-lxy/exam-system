@@ -4,7 +4,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,7 +23,6 @@ import java.nio.file.Paths;
 @Slf4j
 @RestController
 @RequestMapping("/files")
-@CrossOrigin
 public class FileController {
 
     @Value("${file.upload.path:./uploads/}")  // 本地文件存储路径
@@ -53,9 +51,10 @@ public class FileController {
             }
             
             // 检查文件是否在允许的目录内（安全检查）  // 防止路径穿越攻击
+            // 注意：必须拼接文件分隔符再比较前缀，否则 uploads2 这类兄弟目录会绕过 /uploads 的校验
             String canonicalFilePath = file.getCanonicalPath();
             String canonicalUploadPath = new File(localUploadPath).getCanonicalPath();
-            if (!canonicalFilePath.startsWith(canonicalUploadPath)) {
+            if (!canonicalFilePath.startsWith(canonicalUploadPath + File.separator)) {
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 return;
             }

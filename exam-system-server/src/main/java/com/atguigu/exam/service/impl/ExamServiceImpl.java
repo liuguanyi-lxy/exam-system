@@ -14,6 +14,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -76,7 +77,18 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         record.setWindowSwitches(0);
         record.setStartTime(LocalDateTime.now());//使用的是本地的时区时间
         //进行试卷记录保存
-        this.save(record);
+        try {
+            this.save(record);
+        } catch (DuplicateKeyException e) {
+            //并发双开撞了 exam_records 表的唯一索引 uk_exam_active_student_paper（只约束"进行中"记录），
+            //说明另一请求刚创建了进行中的记录，回查返回即可，保证同一学生同一试卷只有一条进行中的考试
+            log.warn("{}同学并发重复开考试卷{}，已返回已存在的进行中记录", startExamVo.getStudentName(), startExamVo.getPaperId());
+            ExamRecord existing = this.getOne(examRecordLambdaQueryWrapper, false);
+            if (existing != null) {
+                return existing;
+            }
+            throw new RuntimeException("开考请求过于频繁，请稍后刷新重试！");
+        }
         //返回试卷记录，即包含其中的试卷信息给前端
         return record;
     }
