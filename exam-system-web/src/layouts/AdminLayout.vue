@@ -76,7 +76,7 @@
           <el-dropdown trigger="click">
             <span class="user-info">
               <span class="avatar">{{ (userStore.realName || userStore.username || 'U').charAt(0) }}</span>
-              {{ userStore.realName || userStore.username }}
+              <span class="user-name">{{ userStore.realName || userStore.username }}</span>
               <el-icon><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
@@ -105,7 +105,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
@@ -130,6 +130,20 @@ function handleLogout() {
   userStore.logout()
   router.push('/login')
 }
+
+// 窄屏自动收起侧边栏；宽屏不强制展开，保留用户手动切换的状态
+function handleResize() {
+  if (window.innerWidth < 768 && !appStore.sidebarCollapsed) {
+    appStore.sidebarCollapsed = true
+  }
+}
+onMounted(() => {
+  handleResize()
+  window.addEventListener('resize', handleResize)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+})
 </script>
 
 <style lang="scss" scoped>
@@ -288,6 +302,21 @@ function handleLogout() {
         font-size: 14px;
         font-weight: 600;
       }
+    }
+  }
+}
+
+// ---- 响应式：手机上隐藏面包屑，用户名只留头像 ----
+@media (max-width: 560px) {
+  .admin-header {
+    padding: 0 14px;
+    .header-left {
+      gap: 10px;
+      :deep(.el-breadcrumb) { display: none; }
+    }
+    .header-right .user-info {
+      gap: 4px;
+      .user-name { display: none; } // 手机上只留头像和箭头
     }
   }
 }

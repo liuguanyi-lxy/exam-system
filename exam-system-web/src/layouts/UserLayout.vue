@@ -18,7 +18,7 @@
             <el-dropdown trigger="click">
               <span class="user-info">
                 <span class="avatar">{{ (userStore.realName || userStore.username || 'U').charAt(0) }}</span>
-                {{ userStore.realName || userStore.username }}
+                <span class="user-name">{{ userStore.realName || userStore.username }}</span>
                 <el-icon><ArrowDown /></el-icon>
               </span>
               <template #dropdown>
@@ -40,7 +40,34 @@
             <el-button type="primary" round @click="$router.push('/login')">登录</el-button>
           </template>
         </div>
+        <!-- 移动端汉堡按钮 -->
+        <el-icon class="mobile-menu-btn" :size="22" @click="menuOpen = !menuOpen">
+          <Close v-if="menuOpen" />
+          <Menu v-else />
+        </el-icon>
       </div>
+      <!-- 移动端下拉导航 -->
+      <transition name="drop">
+        <div v-if="menuOpen" class="mobile-menu" @click="menuOpen = false">
+          <router-link to="/home" class="mobile-item" :class="{ active: isActive('/home') }">首页</router-link>
+          <router-link to="/exam/list" class="mobile-item" :class="{ active: isActive('/exam/list') }">在线考试</router-link>
+          <router-link to="/videos" class="mobile-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
+          <router-link to="/ranking" class="mobile-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
+          <div class="mobile-divider"></div>
+          <router-link to="/exam/history" class="mobile-item">
+            <el-icon><Notebook /></el-icon> 我的考试
+          </router-link>
+          <router-link v-if="userStore.isAdmin" to="/admin/dashboard" class="mobile-item">
+            <el-icon><Setting /></el-icon> 管理后台
+          </router-link>
+          <a v-if="userStore.isLoggedIn" class="mobile-item danger" @click.prevent="handleLogout">
+            <el-icon><SwitchButton /></el-icon> 退出登录
+          </a>
+          <router-link v-else to="/login" class="mobile-item">
+            <el-icon><User /></el-icon> 登录 / 注册
+          </router-link>
+        </div>
+      </transition>
     </header>
 
     <main class="user-main">
@@ -66,7 +93,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
@@ -74,10 +101,17 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
+const menuOpen = ref(false)
 const isActive = (path) => route.path.startsWith(path)
 const activeMenu = computed(() => route.path)
 
+// 路由变化时收起移动端菜单
+watch(() => route.path, () => {
+  menuOpen.value = false
+})
+
 function handleLogout() {
+  menuOpen.value = false
   userStore.logout()
   router.push('/login')
 }
@@ -200,7 +234,83 @@ function handleLogout() {
         }
       }
     }
+
+    .mobile-menu-btn {
+      display: none;
+      margin-left: 12px;
+      color: $text-primary;
+      cursor: pointer;
+      &:hover { color: $primary; }
+    }
   }
+
+  // ---- 移动端下拉导航（桌面端隐藏） ----
+  .mobile-menu {
+    display: none;
+  }
+}
+
+// ---- 响应式：窄屏收纳导航 ----
+@media (max-width: 768px) {
+  .user-header {
+    .header-content {
+      padding: 0 14px;
+      .logo {
+        margin-right: 0;
+        .logo-text { font-size: 17px; }
+      }
+      .nav-menu { display: none; }
+      .header-right {
+        .user-name { display: none; } // 只保留头像，省出横向空间
+      }
+      .mobile-menu-btn { display: flex; align-items: center; }
+    }
+    .mobile-menu {
+      display: block;
+      position: absolute;
+      top: 64px;
+      left: 0;
+      right: 0;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid $border;
+      box-shadow: $shadow-lg;
+      padding: 8px 14px 14px;
+
+      .mobile-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 10px;
+        border-radius: $radius-md;
+        font-size: 15px;
+        color: $text-primary;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        &:hover { background: rgba(99, 102, 241, 0.06); }
+        &.active { color: $primary; font-weight: 600; background: rgba(99, 102, 241, 0.08); }
+        &.danger { color: $danger; }
+      }
+      .mobile-divider {
+        height: 1px;
+        background: $border;
+        margin: 6px 4px;
+      }
+    }
+  }
+}
+
+// 移动端菜单展开/收起过渡
+.drop-enter-active,
+.drop-leave-active {
+  transition: opacity $transition-fast, transform $transition-fast;
+}
+.drop-enter-from,
+.drop-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 // ---- 内容区 ----

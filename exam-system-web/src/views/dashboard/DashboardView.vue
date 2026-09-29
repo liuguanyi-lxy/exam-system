@@ -64,12 +64,18 @@
 
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
-import * as echarts from 'echarts'
+// echarts 按需引入（只用饼图+柱状图），全量引入会让构建产物多出约 800KB
+import * as echarts from 'echarts/core'
+import { BarChart, PieChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import { getStatsOverview } from '@/api/stats'
 import { getQuestionList } from '@/api/question'
 import { getPaperList } from '@/api/paper'
 import { getBanners } from '@/api/banner'
 import { getVideoCategories } from '@/api/videoCategory'
+
+echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const loading = ref(false)
 const stats = reactive({

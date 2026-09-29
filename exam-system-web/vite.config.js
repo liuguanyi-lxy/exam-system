@@ -25,4 +25,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // 把体积大的依赖拆成独立 chunk，避免全量打进主包（主包曾达 1.25MB）
+        manualChunks: {
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+          echarts: ['echarts'],
+          vendor: ['vue', 'vue-router', 'pinia', 'axios'],
+        },
+      },
+    },
+  },
 })

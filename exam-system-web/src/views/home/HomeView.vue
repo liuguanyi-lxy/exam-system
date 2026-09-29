@@ -17,6 +17,21 @@
       </el-carousel-item>
     </el-carousel>
 
+    <!-- 默认欢迎区：后台没有配置轮播图时展示 -->
+    <section v-else class="home-hero">
+      <div class="hero-content">
+        <h1>智能考试系统</h1>
+        <p>在线考试 · AI 智能组卷 · 简答题智能批阅 · 学习数据可视化</p>
+        <div class="hero-actions">
+          <el-button size="large" round class="btn-gradient" @click="$router.push('/exam/list')">
+            开始考试
+            <el-icon style="margin-left:4px"><Right /></el-icon>
+          </el-button>
+          <el-button size="large" round class="hero-ghost-btn" @click="$router.push('/ranking')">查看排行榜</el-button>
+        </div>
+      </div>
+    </section>
+
     <!-- 公告 -->
     <div class="notice-list" v-if="notices.length">
       <div v-for="n in notices" :key="n.id" class="notice-item slide-up"
@@ -135,6 +150,93 @@ function goLink(url) {
   overflow: hidden;
   margin-bottom: 20px;
   box-shadow: $shadow-lg;
+}
+
+// 默认欢迎区（无轮播图时）
+.home-hero {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #7c3aed 100%);
+  padding: 56px 32px;
+  text-align: center;
+  color: #fff;
+  margin-bottom: 20px;
+  box-shadow: $shadow-lg;
+
+  // 装饰性光斑
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  &::before {
+    width: 300px;
+    height: 300px;
+    background: #06b6d4;
+    top: -130px;
+    right: -70px;
+  }
+  &::after {
+    width: 260px;
+    height: 260px;
+    background: #a855f7;
+    bottom: -150px;
+    left: -60px;
+  }
+
+  .hero-content {
+    position: relative;
+    z-index: 1;
+
+    h1 {
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 15px;
+      opacity: 0.85;
+      margin-bottom: 28px;
+      letter-spacing: 1px;
+    }
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+  }
+
+  .hero-ghost-btn {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.6);
+      color: #fff;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .home-hero {
+    padding: 40px 20px;
+    .hero-content {
+      h1 { font-size: 26px; }
+      p { font-size: 13px; }
+      .hero-actions {
+        flex-direction: column;
+        align-items: center;
+        .el-button { width: 100%; max-width: 260px; margin-left: 0; }
+      }
+    }
+  }
 }
 .banner-slide {
   height: 100%;
