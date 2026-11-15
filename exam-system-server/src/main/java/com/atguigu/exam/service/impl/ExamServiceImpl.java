@@ -4,6 +4,7 @@ import com.atguigu.exam.common.ExamStatus;
 import com.atguigu.exam.entity.*;
 import com.atguigu.exam.mapper.ExamRecordMapper;
 import com.atguigu.exam.service.*;
+import com.atguigu.exam.vo.BatchGradingItemVo;
 import com.atguigu.exam.vo.ExamRankingVO;
 import com.atguigu.exam.vo.GradingResult;
 import com.atguigu.exam.vo.StartExamVo;
@@ -226,8 +227,8 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     }
     /**
      * ai试卷批阅功能
-     * 客观题本地即时判卷，简答题的AI调用先并行提交到共享线程池再统一等待，
-     * 总耗时约等于一次AI调用，而不是简答题数量 × 单次调用时长
+     * 客观题本地即时判卷；简答题与代码题合并成一次批量AI调用判卷（规避AI账号RPM限流），
+     * 批量失败时回退为单题并行判卷；AI 总评另起一次调用
      * @param examRecordId
      * @return
      */
@@ -279,18 +280,31 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                         new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, paper.getId())).stream()
                 .filter(pq -> pq.getQuestionId() != null && pq.getScore() != null)
                 .collect(Collectors.toMap(PaperQuestion::getQuestionId, PaperQuestion::getScore, (a, b) -> a));
-        //3.先把所有简答题的AI判卷任务并行提交到共享线程池
-        Map<Integer, CompletableFuture<GradingResult>> aiFutures = new HashMap<>();
+        //3.收集所有需要AI判卷的题目，合并成一次批量判卷请求
+        //AI账号常有RPM限制（如每分钟3次），逐题并行发起N次调用必然触发限流；
+        //批量判卷 + 总评 = 每次交卷最多2次AI调用
+        List<BatchGradingItemVo> aiGradingItems = new ArrayList<>();
         for (AnswerRecord answerRecord : answerRecordList) {
             Question question = questionMap.get(answerRecord.getQuestionId() == null ? null : answerRecord.getQuestionId().longValue());
             if (question == null || !isAiGradedType(question.getType())) {
                 continue;
             }
             BigDecimal paperScore = scoreMap.get(answerRecord.getQuestionId().longValue());
-            Integer maxScore = paperScore == null ? null : paperScore.intValue();
-            // 简答题与手写代码题都用 AI 判卷，只是评分维度不同（在提示词里区分）
-            aiFutures.put(answerRecord.getQuestionId(),
-                    CompletableFuture.supplyAsync(() -> safeGradeSubjectiveQuestion(question, answerRecord.getUserAnswer(), maxScore), examExecutor));
+            BatchGradingItemVo item = new BatchGradingItemVo();
+            item.setQuestionId(answerRecord.getQuestionId().longValue());
+            item.setQuestion(question);
+            item.setUserAnswer(answerRecord.getUserAnswer());
+            item.setMaxScore(paperScore == null ? null : paperScore.intValue());
+            aiGradingItems.add(item);
+        }
+        Map<Long, GradingResult> aiGradingResults = new HashMap<>();
+        if (!aiGradingItems.isEmpty()) {
+            try {
+                aiGradingResults = aiService.gradingSubjectiveBatch(aiGradingItems);
+            } catch (Exception e) {
+                log.warn("批量AI判卷失败，回退为单题并行判卷。考试记录ID：{}", examRecordId, e);
+                aiGradingResults = parallelGradeFallback(aiGradingItems);
+            }
         }
         //4.遍历答题记录列表，进行判卷，期间记录正确题目数量和总得分，并且修改每条答题记录的状态，得分情况、是否正确以及ai评语
         for (AnswerRecord answerRecord : answerRecordList) {
@@ -322,14 +336,8 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                 String userAnswer = answerRecord.getUserAnswer();
                 //2.判断学生答案是否正确，先分辨题目类型
                 if(isAiGradedType(question.getType())){
-                    //简答题使用AI进行评卷，从并行任务中取回判卷结果，最多等待2分钟
-                    GradingResult gradingResult;
-                    try {
-                        gradingResult = aiFutures.get(answerRecord.getQuestionId()).get(2, TimeUnit.MINUTES);
-                    } catch (Exception e) {
-                        log.error("题目ID: {} AI判卷任务执行失败", answerRecord.getQuestionId(), e);
-                        gradingResult = null;
-                    }
+                    //简答题与代码题：取批量判卷结果；结果缺失视为该题判卷失败，走统一异常分支
+                    GradingResult gradingResult = aiGradingResults.get(answerRecord.getQuestionId().longValue());
                     if (gradingResult == null) {
                         throw new RuntimeException("AI判题服务异常，请稍后重试");
                     }
@@ -410,23 +418,44 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     }
 
     /**
-     * 线程池内执行的简答题AI判卷，任何异常都吞掉并返回null，由主流程统一按判卷失败处理
+     * 批量判卷失败时的回退路径：按题并行调用单题判卷（保留线程池并发）。
+     * 每题结果缺失时以null入表，由主循环统一按判卷失败处理
      */
+    private Map<Long, GradingResult> parallelGradeFallback(List<BatchGradingItemVo> items) {
+        Map<Integer, CompletableFuture<GradingResult>> futures = new HashMap<>();
+        for (BatchGradingItemVo item : items) {
+            futures.put(item.getQuestionId().intValue(),
+                    CompletableFuture.supplyAsync(() -> safeGradeSubjectiveQuestion(item), examExecutor));
+        }
+        Map<Long, GradingResult> results = new HashMap<>();
+        for (Map.Entry<Integer, CompletableFuture<GradingResult>> entry : futures.entrySet()) {
+            try {
+                results.put(entry.getKey().longValue(), entry.getValue().get(2, TimeUnit.MINUTES));
+            } catch (Exception e) {
+                log.error("回退单题判卷失败，题目ID: {}", entry.getKey(), e);
+            }
+        }
+        return results;
+    }
+
+    /**
+     * 线程池内执行的单题AI判卷，任何异常都吞掉并返回null，由主流程统一按判卷失败处理
+     */
+    private GradingResult safeGradeSubjectiveQuestion(BatchGradingItemVo item) {
+        try {
+            if (item.getMaxScore() == null) {
+                throw new RuntimeException("题目分数未设置");
+            }
+            return aiService.gradingSubjectiveQuestion(item.getQuestion(), item.getUserAnswer() == null ? "" : item.getUserAnswer(), item.getMaxScore());
+        } catch (Exception e) {
+            log.error("主观题AI判卷失败，题目ID: {}", item.getQuestionId(), e);
+            return null;
+        }
+    }
+
     /** 需要 AI 判卷的题型：简答题、手写代码题 */
     private boolean isAiGradedType(String type) {
         return "TEXT".equals(type) || "CODE".equals(type);
-    }
-
-    private GradingResult safeGradeSubjectiveQuestion(Question question, String userAnswer, Integer maxScore) {
-        try {
-            if (maxScore == null) {
-                throw new RuntimeException("题目分数未设置");
-            }
-            return aiService.gradingSubjectiveQuestion(question, userAnswer == null ? "" : userAnswer, maxScore);
-        } catch (Exception e) {
-            log.error("主观题AI判卷失败，题目ID: {}", question.getId(), e);
-            return null;
-        }
     }
 
     /**

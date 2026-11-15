@@ -35,6 +35,13 @@ public interface AiService {
      */
      GradingResult gradingSubjectiveQuestion(Question question, String userAnswer, Integer maxScore);
 
+    /**
+     * 批量AI判卷：把多道简答/代码题合并成一次AI调用，规避AI账号RPM限流（如每分钟3次）
+     * @param items 判卷单项列表（题目+学生答案+满分）
+     * @return questionId -> 判卷结果；AI未返回的题目不在结果中，由调用方按判卷失败处理
+     */
+    java.util.Map<Long, GradingResult> gradingSubjectiveBatch(java.util.List<com.atguigu.exam.vo.BatchGradingItemVo> items);
+
 
     /**
      * 根据前台传递的上下文环境，生成对应的提示词
