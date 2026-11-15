@@ -1,0 +1,12 @@
+# 本地工作与工具产物（不入库）
+.workbuddy/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# 构建/依赖兜底（子项目内 .gitignore 之外）
+node_modules/
+target/
+dist/
+*.local
