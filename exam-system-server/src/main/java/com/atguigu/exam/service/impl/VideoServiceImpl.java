@@ -192,45 +192,73 @@ public class VideoServiceImpl implements VideoService {
     @Transactional
     public Map<String, Object> submitVideo(Video video, MultipartFile videoFile, MultipartFile coverFile) {
         Map<String, Object> result = new HashMap<>();
-        
+
+        // 校验与文件处理放在 try 外，业务校验异常不被二次包装，前端能看到明确原因
+        video.setFileUrl(resolveVideoFileUrl(video, videoFile));
+        uploadCoverIfExists(video, coverFile);
+        // 外链视频没有本地文件大小；站内上传记录真实文件大小
+        if (!isExternalSource(video) && videoFile != null) {
+            video.setFileSize(videoFile.getSize());
+        }
+
+        // 设置用户投稿默认值
+        video.setUploaderType(Video.UPLOADER_TYPE_USER);
+        video.setStatus(Video.STATUS_PENDING); // 待审核
+        video.setViewCount(0L);
+        video.setLikeCount(0L);
+        video.setCreatedAt(LocalDateTime.now());
+        video.setUpdatedAt(LocalDateTime.now());
+
+        // 保存视频信息
+        videoMapper.insert(video);
+
+        result.put("success", true);
+        result.put("message", "视频投稿成功，请等待审核");
+        result.put("videoId", video.getId());
+
+        return result;
+    }
+
+    /** 视频来源是否为外部链接 */
+    private boolean isExternalSource(Video video) {
+        return video.getSourceType() != null && video.getSourceType() == Video.SOURCE_TYPE_EXTERNAL;
+    }
+
+    /**
+     * 按来源类型解析视频地址：
+     * 外链模式校验 URL 合法性后直接使用 file_url；站内上传模式调用文件存储上传并返回访问地址
+     */
+    private String resolveVideoFileUrl(Video video, MultipartFile videoFile) {
+        if (isExternalSource(video)) {
+            String url = video.getFileUrl();
+            if (url == null || !(url.trim().startsWith("http://") || url.trim().startsWith("https://"))) {
+                throw new RuntimeException("外部视频链接必须以 http(s):// 开头");
+            }
+            return url.trim();
+        }
+        // 站内上传模式（默认来源，兼容未传 sourceType 的旧客户端）
         if (videoFile == null || videoFile.isEmpty()) {
             throw new RuntimeException("视频文件不能为空");
         }
-        
         try {
-            // 上传视频文件
-            Map<String, Object> videoUploadResult = null; //todo: 文件上传以后开放即可！
-                    // fileUploadService.uploadFile(videoFile, "videos/original/");
-            video.setFileUrl(videoUploadResult.get("url").toString());
-            video.setFileSize(videoFile.getSize());
-            
-            // 上传封面文件（可选）
-            if (coverFile != null && !coverFile.isEmpty()) {
-                Map<String, Object> coverUploadResult = null; //todo： 文件上传以后开放即可
-                        // fileUploadService.uploadFile(coverFile, "videos/covers/");
-                video.setCoverUrl(coverUploadResult.get("url").toString());
-            }
-            
-            // 设置用户投稿默认值
-            video.setUploaderType(Video.UPLOADER_TYPE_USER);
-            video.setStatus(Video.STATUS_PENDING); // 待审核
-            video.setViewCount(0L);
-            video.setLikeCount(0L);
-            video.setCreatedAt(LocalDateTime.now());
-            video.setUpdatedAt(LocalDateTime.now());
-            
-            // 保存视频信息
-            videoMapper.insert(video);
-            
-            result.put("success", true);
-            result.put("message", "视频投稿成功，请等待审核");
-            result.put("videoId", video.getId());
-            
+            return fileUploadService.uploadFile("videos/original/", videoFile);
         } catch (Exception e) {
-            throw new RuntimeException("视频上传失败：" + e.getMessage());
+            log.error("视频文件上传失败", e);
+            throw new RuntimeException("视频文件上传失败：" + e.getMessage());
         }
-        
-        return result;
+    }
+
+    /** 封面文件存在则上传并覆盖 cover_url；外链投稿也可直接传封面链接（保持传入值） */
+    private void uploadCoverIfExists(Video video, MultipartFile coverFile) {
+        if (coverFile == null || coverFile.isEmpty()) {
+            return;
+        }
+        try {
+            video.setCoverUrl(fileUploadService.uploadFile("videos/covers/", coverFile));
+        } catch (Exception e) {
+            log.error("封面文件上传失败", e);
+            throw new RuntimeException("封面文件上传失败：" + e.getMessage());
+        }
     }
 
     @Override
@@ -251,47 +279,32 @@ public class VideoServiceImpl implements VideoService {
     @Transactional
     public Map<String, Object> uploadVideoByAdmin(Video video, MultipartFile videoFile, MultipartFile coverFile, Long adminId) {
         Map<String, Object> result = new HashMap<>();
-        
-        if (videoFile == null || videoFile.isEmpty()) {
-            throw new RuntimeException("视频文件不能为空");
-        }
-        
-        try {
-            // 上传视频文件 todo: 文件上传实现以后开放即可！
-            Map<String, Object> videoUploadResult = null;
-                    //fileUploadService.uploadFile(videoFile, "videos/original/");
-            video.setFileUrl(videoUploadResult.get("url").toString());
+
+        // 校验与文件处理放在 try 外，业务校验异常不被二次包装
+        video.setFileUrl(resolveVideoFileUrl(video, videoFile));
+        uploadCoverIfExists(video, coverFile);
+        if (!isExternalSource(video) && videoFile != null) {
             video.setFileSize(videoFile.getSize());
-            
-            // 上传封面文件（可选）
-            if (coverFile != null && !coverFile.isEmpty()) {
-                Map<String, Object> coverUploadResult = null;
-                       // fileUploadService.uploadFile(coverFile, "videos/covers/");
-                video.setCoverUrl(coverUploadResult.get("url").toString());
-            }
-            
-            // 设置管理员上传默认值
-            video.setUploaderType(Video.UPLOADER_TYPE_ADMIN);
-            video.setAdminId(adminId);
-            video.setStatus(Video.STATUS_PUBLISHED); // 管理员上传直接发布
-            video.setAuditAdminId(adminId);
-            video.setAuditTime(LocalDateTime.now());
-            video.setViewCount(0L);
-            video.setLikeCount(0L);
-            video.setCreatedAt(LocalDateTime.now());
-            video.setUpdatedAt(LocalDateTime.now());
-            
-            // 保存视频信息
-            videoMapper.insert(video);
-            
-            result.put("success", true);
-            result.put("message", "视频上传成功");
-            result.put("videoId", video.getId());
-            
-        } catch (Exception e) {
-            throw new RuntimeException("视频上传失败：" + e.getMessage());
         }
-        
+
+        // 设置管理员上传默认值
+        video.setUploaderType(Video.UPLOADER_TYPE_ADMIN);
+        video.setAdminId(adminId);
+        video.setStatus(Video.STATUS_PUBLISHED); // 管理员上传直接发布
+        video.setAuditAdminId(adminId);
+        video.setAuditTime(LocalDateTime.now());
+        video.setViewCount(0L);
+        video.setLikeCount(0L);
+        video.setCreatedAt(LocalDateTime.now());
+        video.setUpdatedAt(LocalDateTime.now());
+
+        // 保存视频信息
+        videoMapper.insert(video);
+
+        result.put("success", true);
+        result.put("message", "视频上传成功");
+        result.put("videoId", video.getId());
+
         return result;
     }
 

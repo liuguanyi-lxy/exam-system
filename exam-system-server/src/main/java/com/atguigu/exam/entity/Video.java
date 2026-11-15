@@ -32,8 +32,11 @@ public class Video {
     @Schema(description = "分类ID", example = "11")
     private Long categoryId;
     
-    @Schema(description = "视频文件URL", example = "http://localhost:9000/videos/original/java-basic-syntax.mp4")
+    @Schema(description = "视频文件URL；source_type=1 时存外部平台链接（如 B 站视频页地址）", example = "http://localhost:9000/videos/original/java-basic-syntax.mp4")
     private String fileUrl;
+
+    @Schema(description = "来源类型：0-站内上传，1-外部链接", example = "0")
+    private Integer sourceType;
     
     @Schema(description = "封面图片URL", example = "http://localhost:9000/videos/covers/java-basic-syntax.jpg")
     private String coverUrl;
@@ -117,10 +120,14 @@ public class Video {
     private Boolean isLiked;
     
     // ========== 常量定义 ==========
-    
+
     // 上传者类型
     public static final int UPLOADER_TYPE_USER = 1; // 用户投稿
     public static final int UPLOADER_TYPE_ADMIN = 2; // 管理员上传
+
+    // 来源类型
+    public static final int SOURCE_TYPE_UPLOAD = 0;   // 站内上传
+    public static final int SOURCE_TYPE_EXTERNAL = 1; // 外部平台链接
     
     // 视频状态
     public static final int STATUS_PENDING = 0; // 待审核

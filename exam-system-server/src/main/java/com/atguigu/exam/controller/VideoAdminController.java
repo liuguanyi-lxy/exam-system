@@ -59,17 +59,20 @@ public class VideoAdminController {
      * @return 上传结果
      */
     @PostMapping("/upload")
-    @Operation(summary = "管理员上传视频", description = "管理员直接上传视频，无需审核直接发布")
+    @Operation(summary = "管理员上传视频", description = "管理员直接上传视频，无需审核直接发布；支持站内上传与外部平台链接（sourceType=1 时传 externalUrl）两种来源")
     public Result<Map<String, Object>> uploadVideoByAdmin(
             @Parameter(description = "视频标题") @RequestParam String title,
             @Parameter(description = "视频描述") @RequestParam(required = false) String description,
             @Parameter(description = "分类ID") @RequestParam Long categoryId,
             @Parameter(description = "标签") @RequestParam(required = false) String tags,
             @Parameter(description = "上传者名称") @RequestParam String uploaderName,
-            @Parameter(description = "视频时长（秒）") @RequestParam(required = false) Integer duration,
-            @Parameter(description = "视频文件") @RequestParam MultipartFile videoFile,
-            @Parameter(description = "封面文件") @RequestParam(required = false) MultipartFile coverFile) {
-        
+            @Parameter(description = "视频时长（秒），外链投稿可选") @RequestParam(required = false) Integer duration,
+            @Parameter(description = "来源类型：0-站内上传（默认），1-外部链接") @RequestParam(required = false) Integer sourceType,
+            @Parameter(description = "外部视频链接，sourceType=1 时必填") @RequestParam(required = false) String externalUrl,
+            @Parameter(description = "视频文件，sourceType=0 时必填") @RequestParam(required = false) MultipartFile videoFile,
+            @Parameter(description = "封面文件") @RequestParam(required = false) MultipartFile coverFile,
+            jakarta.servlet.http.HttpServletRequest request) {
+
         // 构建视频对象
         Video video = new Video();
         video.setTitle(title);
@@ -78,10 +81,14 @@ public class VideoAdminController {
         video.setTags(tags);
         video.setUploaderName(uploaderName);
         video.setDuration(duration);
-        
-        // TODO: 从当前登录用户获取管理员ID，这里暂时使用固定值
-        Long adminId = 1L;
-        
+        video.setSourceType(sourceType == null ? Video.SOURCE_TYPE_UPLOAD : sourceType);
+        if (video.getSourceType() == Video.SOURCE_TYPE_EXTERNAL) {
+            video.setFileUrl(externalUrl);
+        }
+
+        // 从登录上下文取当前管理员ID
+        Long adminId = (Long) request.getAttribute("userId");
+
         Map<String, Object> result = videoService.uploadVideoByAdmin(video, videoFile, coverFile, adminId);
         return Result.success(result);
     }
@@ -98,11 +105,12 @@ public class VideoAdminController {
     public Result<Void> auditVideo(
             @Parameter(description = "视频ID") @PathVariable Long videoId,
             @Parameter(description = "审核状态：1-通过，2-拒绝") @RequestParam Integer status,
-            @Parameter(description = "审核原因（拒绝时必填）") @RequestParam(required = false) String reason) {
-        
-        // TODO: 从当前登录用户获取管理员ID，这里暂时使用固定值
-        Long adminId = 1L;
-        
+            @Parameter(description = "审核原因（拒绝时必填）") @RequestParam(required = false) String reason,
+            jakarta.servlet.http.HttpServletRequest request) {
+
+        // 从登录上下文取当前管理员ID
+        Long adminId = (Long) request.getAttribute("userId");
+
         videoService.auditVideo(videoId, status, reason, adminId);
         return Result.success(null);
     }
@@ -115,11 +123,12 @@ public class VideoAdminController {
     @PostMapping("/{videoId}/offline")
     @Operation(summary = "下架视频", description = "管理员将已发布的视频下架")
     public Result<Void> offlineVideo(
-            @Parameter(description = "视频ID") @PathVariable Long videoId) {
-        
-        // TODO: 从当前登录用户获取管理员ID，这里暂时使用固定值
-        Long adminId = 1L;
-        
+            @Parameter(description = "视频ID") @PathVariable Long videoId,
+            jakarta.servlet.http.HttpServletRequest request) {
+
+        // 从登录上下文取当前管理员ID
+        Long adminId = (Long) request.getAttribute("userId");
+
         videoService.offlineVideo(videoId, adminId);
         return Result.success(null);
     }

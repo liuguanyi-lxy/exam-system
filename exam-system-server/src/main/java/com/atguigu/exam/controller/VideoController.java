@@ -137,17 +137,19 @@ public class VideoController {
      * @return 投稿结果
      */
     @PostMapping("/submit")
-    @Operation(summary = "用户投稿视频", description = "用户上传视频进行投稿，需要等待审核")
+    @Operation(summary = "用户投稿视频", description = "用户投稿视频进行投稿，需要等待审核；支持站内上传与外部平台链接（sourceType=1 时传 externalUrl）两种来源")
     public Result<Map<String, Object>> submitVideo(
             @Parameter(description = "视频标题") @RequestParam String title,
             @Parameter(description = "视频描述") @RequestParam(required = false) String description,
             @Parameter(description = "分类ID") @RequestParam Long categoryId,
             @Parameter(description = "标签") @RequestParam(required = false) String tags,
             @Parameter(description = "上传者名称") @RequestParam String uploaderName,
-            @Parameter(description = "视频时长（秒）") @RequestParam Integer duration,
-            @Parameter(description = "视频文件") @RequestParam MultipartFile videoFile,
+            @Parameter(description = "视频时长（秒），外链投稿可选") @RequestParam(required = false) Integer duration,
+            @Parameter(description = "来源类型：0-站内上传（默认），1-外部链接") @RequestParam(required = false) Integer sourceType,
+            @Parameter(description = "外部视频链接，sourceType=1 时必填") @RequestParam(required = false) String externalUrl,
+            @Parameter(description = "视频文件，sourceType=0 时必填") @RequestParam(required = false) MultipartFile videoFile,
             @Parameter(description = "封面文件") @RequestParam(required = false) MultipartFile coverFile) {
-        
+
         // 构建视频对象
         Video video = new Video();
         video.setTitle(title);
@@ -156,8 +158,12 @@ public class VideoController {
         video.setTags(tags);
         video.setUploaderName(uploaderName);
         video.setDuration(duration);
-        
+        video.setSourceType(sourceType == null ? Video.SOURCE_TYPE_UPLOAD : sourceType);
+        if (video.getSourceType() == Video.SOURCE_TYPE_EXTERNAL) {
+            video.setFileUrl(externalUrl);
+        }
+
         Map<String, Object> result = videoService.submitVideo(video, videoFile, coverFile);
         return Result.success(result);
     }
-} 
+}

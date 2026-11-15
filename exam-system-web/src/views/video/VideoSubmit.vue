@@ -23,7 +23,23 @@
         <el-input v-model="form.uploaderName" :disabled="true" />
       </el-form-item>
 
-      <el-form-item label="视频文件" required>
+      <el-form-item label="视频来源">
+        <el-radio-group v-model="form.sourceType">
+          <el-radio :value="0">上传视频文件</el-radio>
+          <el-radio :value="1">外部平台链接</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-form-item v-if="form.sourceType === 1" label="视频链接" required>
+        <el-input v-model="form.externalUrl" placeholder="粘贴视频页链接，如 https://www.bilibili.com/video/BV..." />
+        <div class="url-tip">B 站 / YouTube 链接会在详情页内嵌播放，其他平台提供跳转按钮</div>
+      </el-form-item>
+      <el-form-item v-if="form.sourceType === 1" label="时长">
+        <el-input-number v-model="form.durationMinutes" :min="0" :max="600" style="width:160px" />
+        <span class="url-tip" style="margin-left:8px">分钟（选填）</span>
+      </el-form-item>
+
+      <el-form-item v-if="form.sourceType === 0" label="视频文件" required>
         <el-upload :show-file-list="false" :before-upload="handleVideoSelect" accept="video/*">
           <div class="upload-zone" :class="{ filled: form.videoFile }">
             <el-icon :size="40" class="zone-icon"><VideoCamera /></el-icon>
@@ -63,7 +79,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const categories = ref([])
 const submitting = ref(false)
-const form = reactive({ title: '', description: '', categoryId: null, tags: '', uploaderName: '', videoFile: null, coverFile: null, duration: null })
+const form = reactive({ title: '', description: '', categoryId: null, tags: '', uploaderName: '', videoFile: null, coverFile: null, duration: null, sourceType: 0, externalUrl: '', durationMinutes: null })
 
 // 选择视频文件时读取时长（后端 submit 接口需要 duration 参数）
 function handleVideoSelect(file) {
@@ -81,7 +97,14 @@ function handleVideoSelect(file) {
 }
 
 async function handleSubmit() {
-  if (!form.title || !form.categoryId || !form.videoFile) { ElMessage.warning('请填写完整信息'); return }
+  const isExternal = form.sourceType === 1
+  if (!form.title || !form.categoryId) { ElMessage.warning('请填写完整信息'); return }
+  if (!isExternal && !form.videoFile) { ElMessage.warning('请选择视频文件'); return }
+  if (isExternal) {
+    if (!form.externalUrl || !/^https?:\/\//.test(form.externalUrl.trim())) {
+      ElMessage.warning('请填写以 http(s):// 开头的视频链接'); return
+    }
+  }
   submitting.value = true
   try {
     const fd = new FormData()
@@ -90,8 +113,14 @@ async function handleSubmit() {
     fd.append('categoryId', form.categoryId)
     if (form.tags) fd.append('tags', form.tags)
     fd.append('uploaderName', form.uploaderName || '匿名用户')
-    fd.append('duration', form.duration || 60)
-    fd.append('videoFile', form.videoFile)
+    fd.append('sourceType', form.sourceType)
+    if (isExternal) {
+      fd.append('externalUrl', form.externalUrl.trim())
+      fd.append('duration', form.durationMinutes ? form.durationMinutes * 60 : 0)
+    } else {
+      fd.append('duration', form.duration || 60)
+      fd.append('videoFile', form.videoFile)
+    }
     if (form.coverFile) fd.append('coverFile', form.coverFile)
     await submitVideo(fd)
     ElMessage.success('投稿成功，等待审核')
@@ -113,6 +142,14 @@ onMounted(async () => {
 
 .submit-page {
   @include glass;
+}
+
+.url-tip {
+  font-size: 12px;
+  color: $text-muted;
+  line-height: 1.6;
+  margin-top: 4px;
+  width: 100%;
 }
 
 .upload-zone {

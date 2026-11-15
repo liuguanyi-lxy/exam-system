@@ -3,15 +3,28 @@
     <div v-if="video">
       <!-- 播放器区域 -->
       <div class="player-wrap">
-        <video v-if="!videoFailed" :src="video.fileUrl" controls preload="metadata"
-          class="video-player" @error="videoFailed = true">
-          您的浏览器不支持视频播放
-        </video>
-        <div v-else class="player-fallback">
-          <el-icon :size="64" class="fallback-icon"><VideoPlay /></el-icon>
-          <p class="fallback-title">视频即将上线</p>
-          <p class="fallback-sub">该视频正在处理中，敬请期待</p>
+        <!-- 外链视频：B 站 / YouTube 内嵌播放 -->
+        <iframe v-if="external?.embed" :src="external.embed" class="video-iframe" scrolling="no"
+          frameborder="no" allowfullscreen referrerpolicy="no-referrer"></iframe>
+        <!-- 外链视频：无法内嵌的平台，提供跳转 -->
+        <div v-else-if="external" class="player-fallback external-fallback">
+          <el-icon :size="56" class="fallback-icon"><Link /></el-icon>
+          <p class="fallback-title">该视频来自第三方平台</p>
+          <el-button type="primary" round class="external-btn" @click="openExternal">前往观看</el-button>
+          <p class="fallback-sub">{{ video.fileUrl }}</p>
         </div>
+        <!-- 站内视频 -->
+        <template v-else>
+          <video v-if="!videoFailed" :src="video.fileUrl" controls preload="metadata"
+            class="video-player" @error="videoFailed = true">
+            您的浏览器不支持视频播放
+          </video>
+          <div v-else class="player-fallback">
+            <el-icon :size="64" class="fallback-icon"><VideoPlay /></el-icon>
+            <p class="fallback-title">视频即将上线</p>
+            <p class="fallback-sub">该视频正在处理中，敬请期待</p>
+          </div>
+        </template>
         <div v-if="video.duration" class="player-duration">
           {{ Math.floor(video.duration/60) }}:{{ (video.duration%60).toString().padStart(2,'0') }}
         </div>
@@ -44,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getVideoById, toggleVideoLike, recordVideoView } from '@/api/video'
@@ -55,6 +68,25 @@ const video = ref(null)
 const liked = ref(false)
 const videoFailed = ref(false)
 let viewTimer = null
+
+// 外链来源解析：B 站 / YouTube 可提取出内嵌播放地址，其余平台跳转观看
+const external = computed(() => {
+  if (!video.value || video.value.sourceType !== 1) return null
+  const url = video.value.fileUrl || ''
+  const bv = url.match(/BV[0-9A-Za-z]{10}/)?.[0]
+  if (bv && /bilibili\.com|b23\.tv/.test(url)) {
+    return { kind: 'bilibili', embed: `https://player.bilibili.com/player.html?bvid=${bv}&high_quality=1&danmaku=0&autoplay=0&allowfullscreen=true` }
+  }
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([0-9A-Za-z_-]{11})/)?.[1]
+  if (yt) {
+    return { kind: 'youtube', embed: `https://www.youtube.com/embed/${yt}` }
+  }
+  return { kind: 'other', embed: null }
+})
+
+function openExternal() {
+  if (video.value?.fileUrl) window.open(video.value.fileUrl, '_blank', 'noopener')
+}
 
 async function handleLike() {
   try {
@@ -97,6 +129,24 @@ onBeforeUnmount(() => {
     width: 100%;
     max-height: 480px;
     display: block;
+  }
+  .video-iframe {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 480px;
+    display: block;
+    border: none;
+  }
+  .external-fallback {
+    gap: 12px;
+    .external-btn { margin: 4px 0; }
+    .fallback-sub {
+      font-size: 12px;
+      opacity: 0.5;
+      max-width: 80%;
+      word-break: break-all;
+      text-align: center;
+    }
   }
   .player-fallback {
     aspect-ratio: 16/7;

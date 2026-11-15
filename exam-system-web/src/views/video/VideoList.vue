@@ -23,6 +23,7 @@
             <img v-if="v.coverUrl" :src="v.coverUrl" loading="lazy" />
             <span v-else class="vc-placeholder"><el-icon :size="36"><VideoPlay /></el-icon></span>
             <span class="vc-play"><el-icon :size="28"><VideoPlay /></el-icon></span>
+            <span class="vc-source" v-if="v.sourceType === 1">外链</span>
             <span class="vc-duration" v-if="v.duration">{{ Math.floor(v.duration/60) }}:{{ (v.duration%60).toString().padStart(2,'0') }}</span>
           </div>
           <div class="vc-body">
@@ -118,6 +119,17 @@ onMounted(async () => {
       background: rgba(0, 0, 0, 0.35);
       opacity: 0;
       transition: opacity $transition-fast;
+    }
+    .vc-source {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(245, 158, 11, 0.9);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-weight: 600;
     }
     .vc-duration {
       position: absolute;

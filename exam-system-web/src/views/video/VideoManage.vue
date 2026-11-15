@@ -2,9 +2,12 @@
   <div class="page-container">
     <div class="page-header">
       <h2>视频管理</h2>
-      <el-upload :show-file-list="false" :before-upload="handleUpload" accept="video/*" style="display:inline-block">
-        <el-button type="primary">上传视频</el-button>
-      </el-upload>
+      <div style="display:inline-flex;gap:10px">
+        <el-button @click="openExternalDialog">添加外链视频</el-button>
+        <el-upload :show-file-list="false" :before-upload="handleUpload" accept="video/*" style="display:inline-block">
+          <el-button type="primary">上传视频</el-button>
+        </el-upload>
+      </div>
     </div>
 
     <div class="search-bar">
@@ -25,6 +28,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="uploaderName" label="上传者" width="100" />
+      <el-table-column label="来源" width="80">
+        <template #default="{ row }">
+          <el-tag v-if="row.sourceType === 1" size="small" type="warning" effect="plain">外链</el-tag>
+          <el-tag v-else size="small" effect="plain">站内</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag :type="row.status === 1 ? 'success' : row.status === 2 ? 'danger' : row.status === 3 ? 'info' : 'warning'" size="small">
@@ -49,6 +58,31 @@
       <el-pagination v-model:current-page="page" :page-size="size" :total="total"
         layout="total,prev,pager,next" @change="loadData" />
     </div>
+
+    <!-- 外链视频录入 -->
+    <el-dialog v-model="externalDialog" title="添加外链视频" width="460px">
+      <el-form label-width="80px">
+        <el-form-item label="标题" required>
+          <el-input v-model="externalForm.title" placeholder="视频标题" />
+        </el-form-item>
+        <el-form-item label="分类" required>
+          <el-select v-model="externalForm.categoryId" placeholder="选择分类" style="width:100%">
+            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="视频链接" required>
+          <el-input v-model="externalForm.url" placeholder="https://www.bilibili.com/video/BV..." />
+        </el-form-item>
+        <el-form-item label="时长">
+          <el-input-number v-model="externalForm.minutes" :min="0" :max="600" style="width:160px" />
+          <span style="margin-left:8px;font-size:12px;color:#999">分钟（选填）</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="externalDialog = false">取消</el-button>
+        <el-button type="primary" :loading="externalSubmitting" @click="handleExternalSubmit">确认添加</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -56,6 +90,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { getAdminVideos, auditVideo, offlineVideo, deleteVideo, adminUploadVideo } from '@/api/videoAdmin'
+import { getVideoCategories } from '@/api/videoCategory'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -63,6 +98,39 @@ const page = ref(1)
 const size = ref(10)
 const total = ref(0)
 const filters = reactive({ status: null, keyword: '' })
+const categories = ref([])
+const externalDialog = ref(false)
+const externalSubmitting = ref(false)
+const externalForm = reactive({ title: '', categoryId: null, url: '', minutes: null })
+
+function openExternalDialog() {
+  externalForm.title = ''
+  externalForm.categoryId = categories.value[0]?.id ?? null
+  externalForm.url = ''
+  externalForm.minutes = null
+  externalDialog.value = true
+}
+
+async function handleExternalSubmit() {
+  if (!externalForm.title || !externalForm.categoryId) { ElMessage.warning('请填写标题和分类'); return }
+  if (!externalForm.url || !/^https?:\/\//.test(externalForm.url.trim())) {
+    ElMessage.warning('请填写以 http(s):// 开头的视频链接'); return
+  }
+  externalSubmitting.value = true
+  try {
+    const fd = new FormData()
+    fd.append('title', externalForm.title)
+    fd.append('categoryId', externalForm.categoryId)
+    fd.append('uploaderName', '管理员')
+    fd.append('sourceType', 1)
+    fd.append('externalUrl', externalForm.url.trim())
+    fd.append('duration', externalForm.minutes ? externalForm.minutes * 60 : 0)
+    await adminUploadVideo(fd)
+    ElMessage.success('外链视频已添加')
+    externalDialog.value = false
+    loadData()
+  } catch {} finally { externalSubmitting.value = false }
+}
 
 async function loadData() {
   loading.value = true
@@ -113,5 +181,8 @@ async function handleDelete(row) {
 }
 
 import { onMounted } from 'vue'
-onMounted(loadData)
+onMounted(async () => {
+  loadData()
+  try { categories.value = await getVideoCategories() || [] } catch {}
+})
 </script>
