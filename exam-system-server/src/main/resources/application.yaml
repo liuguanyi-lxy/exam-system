@@ -59,14 +59,20 @@ minio:
   password: ${MINIO_PASSWORD:}
   bucket-name: exam0625
 
-# kimi的配置（api-key在 application-local.yaml 覆盖，绝不提交到代码库）
-kimi:
-  api:
-    model: moonshot-v1-32k
-    uri: https://api.moonshot.cn/v1/chat/completions
-    api-key: ${KIMI_API_KEY:}
-    max-tokens: 4096
-    temperature: 0.3
+# AI 服务配置（OpenAI 兼容接口，默认接 DeepSeek）
+# 换供应商只改这里，不需要动代码：
+#   DeepSeek  : base-url=https://api.deepseek.com/chat/completions , model=deepseek-flash / deepseek-v4-pro
+#   Kimi      : base-url=https://api.moonshot.cn/v1/chat/completions , model=kimi-k2.6
+# api-key 放 application-local.yaml 或用环境变量 AI_API_KEY 注入，不要写在这里
+ai:
+  provider: ${AI_PROVIDER:deepseek}
+  base-url: ${AI_BASE_URL:https://api.deepseek.com/chat/completions}
+  model: ${AI_MODEL:deepseek-flash}
+  api-key: ${AI_API_KEY:}
+  max-tokens: 2048
+  # DeepSeek 支持 0~2；Kimi k2 系列只接受 1。不确定时留空，交给服务端默认值
+  temperature: ${AI_TEMPERATURE:1}
+  timeout-seconds: 60
 
 # JWT登录鉴权配置
 jwt:

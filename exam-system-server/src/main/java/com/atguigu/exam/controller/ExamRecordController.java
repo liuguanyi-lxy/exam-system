@@ -1,9 +1,13 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.common.ExamStatus;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.entity.Paper;
 import com.atguigu.exam.service.ExamRecordService;
 import com.atguigu.exam.service.ExamService;
+import com.atguigu.exam.service.PaperService;
+import com.atguigu.exam.utils.QuestionSanitizer;
 import com.atguigu.exam.vo.ExamRankingVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -30,14 +34,17 @@ public class ExamRecordController {
     private ExamService examService;
     @Autowired
     private ExamRecordService examRecordService;
+    @Autowired
+    private PaperService paperService;
     /**
      * 分页查询考试记录
      */
     @GetMapping("/list")  // 处理GET请求
-    @Operation(summary = "分页查询考试记录", description = "支持多条件筛选的考试记录分页查询，包括按姓名、状态、时间范围等筛选")  // API描述
+    @Operation(summary = "分页查询考试记录", description = "支持多条件筛选的考试记录分页查询，包括按试卷、姓名、状态、时间范围等筛选")  // API描述
     public Result<Page<ExamRecord>> getExamRecords(
             @Parameter(description = "当前页码，从1开始", example = "1") @RequestParam(defaultValue = "1") Integer page,
             @Parameter(description = "每页显示数量", example = "20") @RequestParam(defaultValue = "20") Integer size,
+            @Parameter(description = "试卷ID筛选条件") @RequestParam(required = false) Integer paperId,
             @Parameter(description = "学生姓名筛选条件") @RequestParam(required = false) String studentName,
             @Parameter(description = "学号筛选条件") @RequestParam(required = false) String studentNumber,
             @Parameter(description = "考试状态，0-进行中，1-已完成，2-已批阅") @RequestParam(required = false) Integer status,
@@ -48,6 +55,8 @@ public class ExamRecordController {
         Page<ExamRecord> examRecordPage = new Page<>(page, size);
         // 添加分页查询的条件
         LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        //按试卷筛选：试卷列表页点「考生成绩」进来时需要
+        examRecordLambdaQueryWrapper.eq(paperId != null, ExamRecord::getExamId, paperId);
         examRecordLambdaQueryWrapper.like(studentName != null, ExamRecord::getStudentName, studentName);
         // 将状态码转换为状态字符串
         if (status != null) {
@@ -63,8 +72,60 @@ public class ExamRecordController {
         //按照考试开始时间降序排列,后面的考试记录先显示
         examRecordLambdaQueryWrapper.orderByDesc(ExamRecord::getCreateTime);
         examRecordService.customPageGetExamRecord(examRecordPage, examRecordLambdaQueryWrapper);
-        log.info("成功通过分页查询条件得到对应的考试记录列表，每个考试记录对象包含试卷详情以及答题记录,考试记录列表为%s".formatted(examRecordPage.getRecords()));
+        log.info("查询考试记录列表：paperId={}，当前页 {} 条，共 {} 条", paperId,
+                examRecordPage.getRecords() == null ? 0 : examRecordPage.getRecords().size(), examRecordPage.getTotal());
         return Result.success(examRecordPage);
+    }
+
+    /**
+     * 某张试卷的成绩统计（参考人次、平均分、最高/最低分、及格率、分数分布）
+     * 试卷列表页的「考生成绩」用它出概览
+     */
+    @GetMapping("/stats")
+    @Operation(summary = "试卷成绩统计", description = "按试卷统计参考人次、平均分、最高最低分、及格率与分数段分布")
+    public Result<java.util.Map<String, Object>> getPaperStats(
+            @Parameter(description = "试卷ID") @RequestParam Integer paperId) {
+        Paper paper = paperService.getById(paperId);
+        if (paper == null) {
+            return Result.error("试卷不存在");
+        }
+        java.util.List<ExamRecord> records = examRecordService.list(
+                new LambdaQueryWrapper<ExamRecord>().eq(ExamRecord::getExamId, paperId));
+
+        int total = records.size();
+        // 只统计已批阅的记录，避免把进行中的 0 分算进平均分
+        java.util.List<ExamRecord> graded = records.stream()
+                .filter(r -> ExamStatus.GRADED.equals(r.getStatus()) && r.getScore() != null).toList();
+        double totalScore = paper.getTotalScore() == null ? 100 : paper.getTotalScore().doubleValue();
+
+        double avg = graded.stream().mapToInt(ExamRecord::getScore).average().orElse(0);
+        int max = graded.stream().mapToInt(ExamRecord::getScore).max().orElse(0);
+        int min = graded.stream().mapToInt(ExamRecord::getScore).min().orElse(0);
+        long pass = graded.stream().filter(r -> r.getScore() >= totalScore * 0.6).count();
+
+        // 分数段分布：不及格 / 及格 / 良好 / 优秀
+        int[] buckets = new int[4];
+        for (ExamRecord r : graded) {
+            double rate = totalScore == 0 ? 0 : r.getScore() / totalScore;
+            if (rate < 0.6) buckets[0]++;
+            else if (rate < 0.8) buckets[1]++;
+            else if (rate < 1.0) buckets[2]++;
+            else buckets[3]++;
+        }
+
+        java.util.Map<String, Object> stats = new java.util.LinkedHashMap<>();
+        stats.put("paperId", paperId);
+        stats.put("paperName", paper.getName());
+        stats.put("totalScore", totalScore);
+        stats.put("totalRecords", total);
+        stats.put("gradedRecords", graded.size());
+        stats.put("average", Math.round(avg * 10) / 10.0);
+        stats.put("max", max);
+        stats.put("min", min);
+        stats.put("passRate", graded.isEmpty() ? 0 : Math.round(pass * 1000.0 / graded.size()) / 10.0);
+        stats.put("distribution", buckets);
+        log.info("试卷 {} 成绩统计：参考 {} 人次，已批阅 {} 人次，平均分 {}", paperId, total, graded.size(), stats.get("average"));
+        return Result.success(stats);
     }
 
     /**
@@ -73,10 +134,24 @@ public class ExamRecordController {
     @GetMapping("/{id}")  // 处理GET请求
     @Operation(summary = "获取考试记录详情", description = "根据记录ID获取考试记录的详细信息，包括试卷内容和答题情况")  // API描述
     public Result<ExamRecord> getExamRecordById(
-            @Parameter(description = "考试记录ID") @PathVariable Integer id) {
-            ExamRecord examRecord = examService.customGetExamRecordById(id);
-            log.info("成功通过考试记录ID{}得到对应的考试记录详情,考试记录详情为{}",id,examRecord);
-            return Result.success(examRecord);
+            @Parameter(description = "考试记录ID") @PathVariable Integer id,
+            jakarta.servlet.http.HttpServletRequest request) {
+        ExamRecord examRecord = examService.customGetExamRecordById(id);
+        // 成绩出来之前（进行中/已交卷未批阅）不能让学生从记录详情里看到答案和解析；
+        // 批阅之后结果页需要展示逐题解析与整体评价，完整返回
+        boolean graded = ExamStatus.GRADED.equals(examRecord.getStatus());
+        if (!graded && !isTeacherOrAdmin(request) && examRecord.getPaper() != null) {
+            QuestionSanitizer.stripAnswer(examRecord.getPaper().getQuestions());
+        }
+        log.info("查询考试记录详情成功，记录ID：{}，状态：{}", id, examRecord.getStatus());
+        return Result.success(examRecord);
+    }
+
+    /** 当前请求是否来自教师/管理员 */
+    private boolean isTeacherOrAdmin(jakarta.servlet.http.HttpServletRequest request) {
+        Object role = request.getAttribute("userRole");
+        String r = role == null ? "" : String.valueOf(role);
+        return "ADMIN".equals(r) || "TEACHER".equals(r);
     }
 
     /**

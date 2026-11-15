@@ -3,6 +3,7 @@ package com.atguigu.exam.controller;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Question;
 import com.atguigu.exam.service.QuestionService;
+import com.atguigu.exam.utils.QuestionSanitizer;
 import com.atguigu.exam.vo.QuestionPageVo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
@@ -73,7 +74,8 @@ public class QuestionController {
             @Parameter(description = "查询的题目分类ID", example = "101") @RequestParam(required = false) Long categoryId,
             @Parameter(description = "查询的题目难度", example = "EASY") @RequestParam(required = false) String difficulty,
             @Parameter(description = "查询的题目类型", example = "CHOICE") @RequestParam(required = false) String type,
-            @Parameter(description = "查询的题目关键词", example = "JAVA") @RequestParam(required = false) String keyword
+            @Parameter(description = "查询的题目关键词", example = "JAVA") @RequestParam(required = false) String keyword,
+            jakarta.servlet.http.HttpServletRequest request
             ){
         // 手动构建 VO
         QuestionPageVo questionPageVo = new QuestionPageVo();
@@ -85,6 +87,9 @@ public class QuestionController {
         Page<Question> questionPage = new Page<>(page, size);
         // TODO: 调用Service层进行分页查询，并返回结果给questionPage
         questionService.customPageQuery(questionPage, questionPageVo);
+        if (!isTeacherOrAdmin(request)) {
+            QuestionSanitizer.stripAnswer(questionPage.getRecords());
+        }
         return Result.success(questionPage);
     }
     
@@ -272,7 +277,9 @@ public class QuestionController {
     public Result<List<Question>> getPopularQuestions(
             @Parameter(description = "返回题目数量", example = "10") @RequestParam(defaultValue = "10") Integer size) {
         List<Question> questionList =  questionService.customFindPopularQuestions(size);
-        log.info("查询热门题目接口调用成功！热门题目数量：{},具体数据集合为：{}",questionList.size(),questionList);
+        // 首页展示只需要题干，公开接口一律不带答案
+        QuestionSanitizer.stripAnswer(questionList);
+        log.info("查询热门题目接口调用成功，热门题目数量：{}", questionList.size());
         // 异常处理：记录日志并返回友好的错误信息
         return Result.success(questionList);
 
@@ -301,4 +308,11 @@ public class QuestionController {
         return Result.success(count, "热门题目缓存刷新成功");
     }
 
+
+    /** 当前请求是否来自教师/管理员 */
+    private boolean isTeacherOrAdmin(jakarta.servlet.http.HttpServletRequest request) {
+        Object role = request.getAttribute("userRole");
+        String r = role == null ? "" : String.valueOf(role);
+        return "ADMIN".equals(r) || "TEACHER".equals(r);
+    }
 } 

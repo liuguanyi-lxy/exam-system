@@ -46,7 +46,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     @Autowired
     private PaperQuestionService paperQuestionService;
     @Autowired
-    private KimiAiService kimiAiService;
+    private AiService aiService;
     @Autowired
     @Qualifier("examExecutor")
     private ThreadPoolExecutor examExecutor;
@@ -179,7 +179,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         }
         //获取考试记录关联的试卷信息，进行判空，如果为空就是考试对应的试卷已经被删除，无法进行成绩判定
         Paper paper = examRecord.getPaper();
-        log.info("开始判卷，试卷信息为：{}",paper);
+        log.info("开始判卷，考试记录ID：{}，试卷ID：{}", examRecordId, paper.getId());
         if(paper == null){
             //试卷为空则给考试记录状态修改成已批阅
             examRecord.setStatus(ExamStatus.GRADED);
@@ -205,7 +205,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         List<Question> paperQuestions = paper.getQuestions() == null ? new ArrayList<>() : paper.getQuestions();
         //将试卷包含的题目列表转换成题目ID对应的题目对象形式的map，方便根据题目ID取出对应的题目对象
         Map<Long, Question> questionMap = paperQuestions.stream().collect(Collectors.toMap(Question::getId, q -> q));
-        log.info("试卷题目列表为：{}",questionMap);
+        log.debug("试卷题目数量：{}", questionMap == null ? 0 : questionMap.size());
         //一次性查出本试卷每道题的分值，key为题目ID，避免在循环里逐条查库
         Map<Long, BigDecimal> scoreMap = paperQuestionService.list(
                         new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, paper.getId())).stream()
@@ -215,13 +215,14 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         Map<Integer, CompletableFuture<GradingResult>> aiFutures = new HashMap<>();
         for (AnswerRecord answerRecord : answerRecordList) {
             Question question = questionMap.get(answerRecord.getQuestionId() == null ? null : answerRecord.getQuestionId().longValue());
-            if (question == null || !"TEXT".equals(question.getType())) {
+            if (question == null || !isAiGradedType(question.getType())) {
                 continue;
             }
             BigDecimal paperScore = scoreMap.get(answerRecord.getQuestionId().longValue());
             Integer maxScore = paperScore == null ? null : paperScore.intValue();
+            // 简答题与手写代码题都用 AI 判卷，只是评分维度不同（在提示词里区分）
             aiFutures.put(answerRecord.getQuestionId(),
-                    CompletableFuture.supplyAsync(() -> safeGradeTextQuestion(question, answerRecord.getUserAnswer(), maxScore), examExecutor));
+                    CompletableFuture.supplyAsync(() -> safeGradeSubjectiveQuestion(question, answerRecord.getUserAnswer(), maxScore), examExecutor));
         }
         //4.遍历答题记录列表，进行判卷，期间记录正确题目数量和总得分，并且修改每条答题记录的状态，得分情况、是否正确以及ai评语
         for (AnswerRecord answerRecord : answerRecordList) {
@@ -252,7 +253,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                 //获取学生答案
                 String userAnswer = answerRecord.getUserAnswer();
                 //2.判断学生答案是否正确，先分辨题目类型
-                if("TEXT".equals(question.getType())){
+                if(isAiGradedType(question.getType())){
                     //简答题使用AI进行评卷，从并行任务中取回判卷结果，最多等待2分钟
                     GradingResult gradingResult;
                     try {
@@ -323,7 +324,15 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         //5.更新答题记录列表
         answerRecordService.updateBatchById(answerRecordList);
         //6.根据得分情况、试卷总分数、试卷总题目数、答题正确题目数生成ai评价总结
-        String summary = kimiAiService.buildSummary(totalScore, paper.getTotalScore().intValue(), paperQuestions.size(), correctNumber);
+        // AI 总评失败不能连累成绩入库：先保证分数和状态落库，评语退化为兜底文案
+        String summary;
+        try {
+            summary = aiService.buildSummary(totalScore, paper.getTotalScore().intValue(), paperQuestions.size(), correctNumber);
+        } catch (Exception e) {
+            log.warn("AI 总评生成失败，使用兜底评语。考试记录ID：{}", examRecordId, e);
+            summary = "本次考试共 %d 题，答对 %d 题，得分 %d / %d。AI 评语生成失败，成绩已按客观题判分结果记录。"
+                    .formatted(paperQuestions.size(), correctNumber, totalScore, paper.getTotalScore().intValue());
+        }
         //7.更新考试记录信息
         examRecord.setSummary(summary);
         examRecord.setScore(totalScore);
@@ -335,14 +344,19 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     /**
      * 线程池内执行的简答题AI判卷，任何异常都吞掉并返回null，由主流程统一按判卷失败处理
      */
-    private GradingResult safeGradeTextQuestion(Question question, String userAnswer, Integer maxScore) {
+    /** 需要 AI 判卷的题型：简答题、手写代码题 */
+    private boolean isAiGradedType(String type) {
+        return "TEXT".equals(type) || "CODE".equals(type);
+    }
+
+    private GradingResult safeGradeSubjectiveQuestion(Question question, String userAnswer, Integer maxScore) {
         try {
             if (maxScore == null) {
                 throw new RuntimeException("题目分数未设置");
             }
-            return kimiAiService.gradingTextQuestion(question, userAnswer == null ? "" : userAnswer, maxScore);
+            return aiService.gradingSubjectiveQuestion(question, userAnswer == null ? "" : userAnswer, maxScore);
         } catch (Exception e) {
-            log.error("简答题AI判卷失败，题目ID: {}", question.getId(), e);
+            log.error("主观题AI判卷失败，题目ID: {}", question.getId(), e);
             return null;
         }
     }
@@ -374,8 +388,9 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                 Set<String> userSet = splitAnswer(user);
                 if (userSet.isEmpty()) return false;
                 Set<String> correctSet = splitAnswer(correctAnswer);
-                boolean userIsLetter = isPureLetterSet(userSet);
-                boolean correctIsLetter = isPureLetterSet(correctSet);
+                int choiceCount = choices == null ? 0 : choices.size();
+                boolean userIsLetter = isPureLetterSet(userSet) || isConcatenatedLetters(user, choiceCount);
+                boolean correctIsLetter = isPureLetterSet(correctSet) || isConcatenatedLetters(correctAnswer, choiceCount);
 
                 if (userIsLetter && correctIsLetter) {
                     // 两者都是字母（如 "AB" vs "A,B" vs "a、b"）→ 按字符集合比较，兼容连写与大小写
@@ -392,11 +407,13 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
                     }
                     return actual.equals(expected);
                 } else if (correctIsLetter) {
-                    // 学生答内容，标准答字母 -> 字母映射到内容比较
-                    return userSet.equals(mapLettersToContents(correctAnswer, choices));
+                    // 学生答内容，标准答字母 -> 把正确字母还原成选项内容后，用「包含关系」判断。
+                    // 不能按逗号/空格切分：选项文本本身可能带逗号或空格（如"大于 8 就转"），
+                    // 一切分就会把一项内容拆成两段，导致全选对也判 0 分。
+                    return matchMultiContents(user, correctAnswer, choices);
                 } else {
-                    // 两者都是选项内容，直接比较
-                    return userSet.equals(correctSet);
+                    // 两者都是选项内容：同样用包含判断，兼容选项文本里的逗号/空格
+                    return matchMultiContents(user, correctAnswer, choices);
                 }
             }
 
@@ -413,6 +430,53 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
 
         // 兜底：直接比对
         return correctAnswer.equals(userAnswer);
+    }
+
+
+    /**
+     * 取选项对应的字母（A/B/C...）。
+     *
+     * 历史实现用 'A' + choice.getSort()，但题库里存在 sort 从 1 开始的题目
+     * （正确项落在 B~E），导致「答案字母」和「前端展示的选项编号」错位、多选题被误判。
+     * 这里改为按选项在列表中的位置计算，前提是调用方已按 sort 排好序。
+     */
+    private char letterOf(List<QuestionChoice> choices, QuestionChoice choice) {
+        int index = choices == null ? -1 : choices.indexOf(choice);
+        return (char) ('A' + (index < 0 ? 0 : index));
+    }
+
+    /**
+     * 多选题「学生答选项内容、标准答字母」的比对。
+     *
+     * 不能用分隔符切分用户答案：选项文本里出现英文/中文逗号、空格时（如 "大于 8 就转"），
+     * 切分会把一条选项拆成多条，导致全选对也判错。这里改为判断：
+     *   1. 每一个正确选项的内容都必须出现在用户答案里；
+     *   2. 未被标准答案选中的选项内容不能出现（若某个错误选项是正确选项的子串，则跳过该项，避免误杀）。
+     */
+    private boolean matchMultiContents(String userRaw, String letterAnswer, List<QuestionChoice> choices) {
+        if (choices == null || choices.isEmpty()) return false;
+        // 选项上的 isCorrect 标记是最可信的来源；缺失时才退化为按字母映射
+        Set<String> correctContents = new HashSet<>();
+        for (QuestionChoice c : choices) {
+            if (Boolean.TRUE.equals(c.getIsCorrect()) && c.getContent() != null) {
+                correctContents.add(c.getContent());
+            }
+        }
+        if (correctContents.isEmpty()) {
+            correctContents = mapLettersToContents(letterAnswer, choices);
+        }
+        if (correctContents.isEmpty()) return false;
+
+        if (!correctContents.stream().allMatch(userRaw::contains)) return false;
+
+        for (QuestionChoice c : choices) {
+            String content = c.getContent();
+            if (content == null || content.isBlank() || correctContents.contains(content)) continue;
+            // 错误选项是某个正确选项的子串时无法通过包含关系区分，跳过不判
+            boolean substringOfCorrect = correctContents.stream().anyMatch(cc -> cc.contains(content));
+            if (!substringOfCorrect && userRaw.contains(content)) return false;
+        }
+        return true;
     }
 
     /** 判断题答案归一化：正确/对/TRUE/true -> TRUE，错误/错/FALSE/false -> FALSE */
@@ -441,7 +505,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         // 学生答案可能是 "B. xxx" 或纯内容
         String content = normalizeChoice(userContent);
         for (QuestionChoice c : choices) {
-            char cLetter = (char) ('A' + c.getSort());
+            char cLetter = letterOf(choices, c);
             if (letters.indexOf(cLetter) >= 0 && content.equals(c.getContent())) {
                 return true;
             }
@@ -455,7 +519,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         String content = normalizeChoice(contentAnswer);
         String letters = userLetter.trim().toUpperCase();
         for (QuestionChoice c : choices) {
-            char cLetter = (char) ('A' + c.getSort());
+            char cLetter = letterOf(choices, c);
             if (letters.indexOf(cLetter) >= 0 && content.equals(c.getContent())) {
                 return true;
             }
@@ -487,8 +551,28 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     }
 
     private boolean isPureLetterSet(Set<String> set) {
+        if (set == null || set.isEmpty()) return false;
         for (String s : set) {
-            if (!s.matches("[A-Za-z]+")) return false;
+            // 必须是「单个字母」才算字母答案。
+            // 历史实现用 [A-Za-z]+ 判断，会把 public/private/protected 这类英文选项内容
+            // 误判成字母答案，导致多选题被判错。
+            if (s == null || s.length() != 1 || !Character.isLetter(s.charAt(0))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 判断是否是「连写的字母答案」，如 AB / acd。
+     * 用于兼容接口直接传 "AB" 的情况；因为含分隔符的内容型答案（public,private）不会命中。
+     */
+    private boolean isConcatenatedLetters(String answer, int choiceCount) {
+        if (answer == null) return false;
+        String t = answer.replaceAll("\\s+", "");
+        if (t.length() <= 1 || t.length() > Math.max(choiceCount, 1)) return false;
+        if (!t.matches("[A-Za-z]+")) return false;
+        // 每个字母都要落在选项范围内
+        for (char c : t.toUpperCase().toCharArray()) {
+            if (c - 'A' >= choiceCount) return false;
         }
         return true;
     }
@@ -509,7 +593,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         if (choices == null) return result;
         String up = letters.toUpperCase();
         for (QuestionChoice c : choices) {
-            char cLetter = (char) ('A' + c.getSort());
+            char cLetter = letterOf(choices, c);
             if (up.indexOf(cLetter) >= 0 && c.getContent() != null) {
                 result.add(c.getContent());
             }
@@ -524,7 +608,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         Set<String> contentSet = splitAnswer(contents);
         for (QuestionChoice c : choices) {
             if (c.getContent() != null && contentSet.contains(c.getContent())) {
-                result.add(String.valueOf((char) ('A' + c.getSort())));
+                result.add(String.valueOf(letterOf(choices, c)));
             }
         }
         return result;

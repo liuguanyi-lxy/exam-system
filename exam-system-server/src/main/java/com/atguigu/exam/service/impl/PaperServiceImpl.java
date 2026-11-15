@@ -85,10 +85,11 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             log.warn(("ID为%s试卷没有题目，但可以进行试卷编辑，但是不能用于考试").formatted(id));
             return paper;
         }
-        log.debug("试卷题目列表为:{}", questionList);
+        log.debug("试卷ID:{} 题目数量:{}", id, questionList == null ? 0 : questionList.size());
         //题目列表中的题目按照选择题、判断题、简答题的形式进行排序
-        questionList.sort((o1, o2) -> o1.getType().compareTo(o2.getType()));
-        log.debug("排序后的题目列表为:{}", questionList);
+        // 明确题型顺序：选择 -> 判断 -> 手写代码 -> 简答，避免直接按字母序把 CODE 排在判断前面
+        questionList.sort((o1, o2) -> Integer.compare(typeRank(o1.getType()), typeRank(o2.getType())));
+        log.debug("试卷ID:{} 排序完成", id);
         //将排序后的题目列表设置到试卷对象中
         paper.setQuestions(questionList);
         return paper;
@@ -284,5 +285,14 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
         removeById(id);
         //删除试卷题目关联表中的数据
         paperQuestionService.remove(new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, id));
+    }
+
+    /** 题型排序权重：选择 -> 判断 -> 简答 -> 手写代码（先答文字题，再做编程题） */
+    private int typeRank(String type) {
+        if ("CHOICE".equals(type)) return 0;
+        if ("JUDGE".equals(type)) return 1;
+        if ("TEXT".equals(type)) return 2;
+        if ("CODE".equals(type)) return 3;
+        return 4;
     }
 }

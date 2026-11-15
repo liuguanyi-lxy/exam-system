@@ -3,6 +3,7 @@ package com.atguigu.exam.controller;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Paper;
 import com.atguigu.exam.service.PaperService;
+import com.atguigu.exam.utils.QuestionSanitizer;
 import com.atguigu.exam.vo.AiPaperVo;
 import com.atguigu.exam.vo.PaperVo;
 import io.swagger.v3.oas.annotations.Operation;
@@ -85,9 +86,16 @@ public class PaperController {
      */
     @GetMapping("/{id}")  // 处理GET请求
     @Operation(summary = "获取试卷详情", description = "获取试卷的详细信息，包括试卷基本信息和包含的所有题目")  // API描述
-    public Result<Paper> getPaperById(@Parameter(description = "试卷ID") @PathVariable Integer id) {
-        Paper paper = paperService.customPaperDetailById(Long.valueOf(id));;
-        log.info("查询试卷详情接口成功！试卷信息为:{}",paper);
+    public Result<Paper> getPaperById(@Parameter(description = "试卷ID") @PathVariable Integer id,
+                                      jakarta.servlet.http.HttpServletRequest request) {
+        Paper paper = paperService.customPaperDetailById(Long.valueOf(id));
+        // 学生侧只返回题干与选项，剔除标准答案/解析/选项对错，避免考试中直接看到答案
+        Object role = request.getAttribute("userRole");
+        if (role == null || "STUDENT".equals(String.valueOf(role))) {
+            QuestionSanitizer.stripAnswer(paper.getQuestions());
+        }
+        log.info("查询试卷详情成功！试卷ID：{}，题目数：{}", id,
+                paper.getQuestions() == null ? 0 : paper.getQuestions().size());
         return Result.success(paper);
     }
 
