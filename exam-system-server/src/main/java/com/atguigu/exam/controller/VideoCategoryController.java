@@ -1,6 +1,7 @@
 package com.atguigu.exam.controller;
 
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.VideoCategory;
 import com.atguigu.exam.service.VideoCategoryService;
@@ -18,6 +19,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/video-categories")
+@RequireRole({"TEACHER", "ADMIN"}) // 视频分类增删改仅教师/管理员；GET浏览在公开白名单不受影响
 @Tag(name = "视频分类管理", description = "视频分类相关操作，包括分类的增删改查、树形结构管理等功能")
 public class VideoCategoryController {
 

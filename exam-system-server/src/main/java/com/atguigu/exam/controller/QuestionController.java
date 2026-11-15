@@ -1,5 +1,6 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Question;
 import com.atguigu.exam.service.QuestionService;
@@ -105,10 +106,15 @@ public class QuestionController {
      * @return 题目详细信息，包含选项和答案
      */
     @GetMapping("/{id}")  // {id}是路径变量，会映射到方法参数
-    @Operation(summary = "根据ID查询题目详情", description = "获取指定ID的题目完整信息，包括题目内容、选项、答案等详细数据")  // API描述
+    @Operation(summary = "根据ID查询题目详情", description = "获取指定ID的题目完整信息；教师/管理员返回含答案解析的完整数据，学生返回脱敏后的数据")  // API描述
     public Result<Question> getQuestionById(
-            @Parameter(description = "题目ID", example = "1") @PathVariable Long id) {
+            @Parameter(description = "题目ID", example = "1") @PathVariable Long id,
+            jakarta.servlet.http.HttpServletRequest request) {
         Question question = questionService.customDetailQuestion(id);
+        // 答案与解析仅对教师/管理员下发，学生角色脱敏，防止绕过前端直接拉题库答案
+        if (!isTeacherOrAdmin(request) && question != null) {
+            QuestionSanitizer.stripAnswer(question);
+        }
         log.info("查询题目详情调用成功！ 返回数据为：{}",question);
         return Result.success(question);
     }
@@ -128,6 +134,7 @@ public class QuestionController {
      * @param question 前端提交的题目数据（JSON格式）
      * @return 创建成功后的题目信息
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping  // 映射POST请求到/api/questions
     @Operation(summary = "创建新题目", description = "添加新的考试题目，支持选择题、判断题、简答题等多种题型")  // API描述
     public Result<Question> createQuestion(@RequestBody Question question) {
@@ -148,6 +155,7 @@ public class QuestionController {
      * @param question 更新的题目数据
      * @return 更新后的题目信息
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PutMapping("/{id}")  // 处理PUT请求
     @Operation(summary = "更新题目信息", description = "修改指定题目的内容、选项、答案等信息")  // API描述
     public Result<Question> updateQuestion(
@@ -172,6 +180,7 @@ public class QuestionController {
      * @param id 要删除的题目ID
      * @return 删除操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @DeleteMapping("/{id}")  // 处理DELETE请求
     @Operation(summary = "删除题目", description = "根据ID删除指定的题目，包括关联的选项和答案数据")  // API描述
     public Result<String> deleteQuestion(
@@ -300,6 +309,7 @@ public class QuestionController {
      * 
      * @return 刷新结果，包含处理的题目数量
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping("/popular/refresh")
     @Operation(summary = "刷新热门题目缓存", description = "管理员功能，重置或初始化热门题目的访问计数")
     public Result<Integer> refreshPopularQuestions() {

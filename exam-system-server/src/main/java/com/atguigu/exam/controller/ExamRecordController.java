@@ -1,5 +1,6 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.ExamStatus;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.ExamRecord;
@@ -99,6 +100,7 @@ public class ExamRecordController {
      * 某张试卷的成绩统计（参考人次、平均分、最高/最低分、及格率、分数分布）
      * 试卷列表页的「考生成绩」用它出概览
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @GetMapping("/stats")
     @Operation(summary = "试卷成绩统计", description = "按试卷统计参考人次、平均分、最高最低分、及格率与分数段分布")
     public Result<java.util.Map<String, Object>> getPaperStats(

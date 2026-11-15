@@ -1,6 +1,7 @@
 package com.atguigu.exam.controller;
 
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.service.StatsService;
 import com.atguigu.exam.vo.StatsVo;
@@ -31,6 +32,7 @@ public class StatsController {
      * 包括题目数量、用户数量、考试数量等
      * @return 系统统计信息
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @GetMapping("/overview")  // 处理GET请求
     @Operation(summary = "获取系统概览统计", description = "获取系统的概览统计数据，包括题目、用户、考试等各项数量统计")  // API描述
     public Result<StatsVo> getSystemStats() {

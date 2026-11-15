@@ -1,6 +1,7 @@
 package com.atguigu.exam.controller;
 
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Banner;
 import com.atguigu.exam.service.BannerService;
@@ -35,6 +36,7 @@ public class BannerController {
      * @param file 图片文件
      * @return 图片访问URL
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping("/upload-image")  // 处理POST请求
     @Operation(summary = "上传轮播图图片", description = "将图片文件上传到MinIO服务器，返回可访问的图片URL")  // API描述
     public Result<String> uploadBannerImage(
@@ -106,6 +108,7 @@ public class BannerController {
      * @param banner 轮播图对象
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping("/add")  // 处理POST请求
     @Operation(summary = "添加轮播图", description = "创建新的轮播图，需要提供图片URL、标题、跳转链接等信息")  // API描述
     public Result<String> addBanner(@RequestBody Banner banner) throws Exception {
@@ -119,6 +122,7 @@ public class BannerController {
      * @param banner 轮播图对象
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PutMapping("/update")  // 处理PUT请求
     @Operation(summary = "更新轮播图", description = "更新轮播图的信息，包括图片、标题、跳转链接、排序等")  // API描述
     public Result<String> updateBanner(@RequestBody Banner banner) throws Exception {
@@ -132,6 +136,7 @@ public class BannerController {
      * @param id 轮播图ID
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @DeleteMapping("/delete/{id}")  // 处理DELETE请求
     @Operation(summary = "删除轮播图", description = "根据ID删除指定的轮播图")  // API描述
     public Result<String> deleteBanner(@Parameter(description = "轮播图ID") @PathVariable Long id) {
@@ -151,6 +156,7 @@ public class BannerController {
      * @param isActive 是否启用
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PutMapping("/toggle/{id}")  // 处理PUT请求
     @Operation(summary = "切换轮播图状态", description = "启用或禁用指定的轮播图，禁用后不会在前台显示")  // API描述
     public Result<String> toggleBannerStatus(

@@ -1,6 +1,7 @@
 package com.atguigu.exam.controller;
 
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.service.AiService;
 import com.atguigu.exam.service.QuestionService;
@@ -29,6 +30,7 @@ import java.util.List;
 @Slf4j  // 日志注解
 @RestController  // REST控制器，返回JSON数据
 @RequestMapping("/api/questions/batch")  // 题目批量操作API路径前缀
+@RequireRole({"TEACHER", "ADMIN"}) // Excel导入/AI生成等批量操作仅教师/管理员
 @Tag(name = "题目批量操作", description = "题目批量管理相关操作，包括Excel导入、AI生成题目、批量验证等功能")  // Swagger API分组
 public class QuestionBatchController {
     

@@ -1,5 +1,6 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Category;
 import com.atguigu.exam.service.CategoryService;
@@ -19,6 +20,7 @@ import java.util.List;
 @Slf4j
 @RestController  // REST控制器，返回JSON数据
 @RequestMapping("/api/categories")  // 分类API路径前缀
+@RequireRole({"TEACHER", "ADMIN"}) // 分类增删改仅教师/管理员；GET浏览在公开白名单不受影响
 @Tag(name = "分类管理", description = "题目分类相关操作，包括分类的增删改查、树形结构管理等功能")  // Swagger API分组
 public class CategoryController {
 

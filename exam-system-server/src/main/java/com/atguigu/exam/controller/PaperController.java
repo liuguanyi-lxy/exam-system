@@ -1,5 +1,6 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Paper;
 import com.atguigu.exam.service.PaperService;
@@ -44,6 +45,7 @@ public class PaperController {
     /**
      * 手动创建试卷
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping  // 处理POST请求
     @Operation(summary = "手动创建试卷", description = "通过手动选择题目的方式创建试卷")  // API描述
     public Result<Paper> createPaper(@RequestBody PaperVo paperVo) {
@@ -58,6 +60,7 @@ public class PaperController {
      * @param paperVo 试卷更新数据
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PutMapping("/{id}")  // 处理PUT请求
     @Operation(summary = "更新试卷信息", description = "更新试卷的基本信息和题目配置")  // API描述
     public Result<Paper> updatePaper(
@@ -73,6 +76,7 @@ public class PaperController {
      * @param aiPaperVo 包含试卷信息和组卷规则的数据
      * @return 创建好的试卷
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping("/ai")  // 处理POST请求
     @Operation(summary = "AI智能组卷", description = "基于设定的规则（题型分布、难度配比等）使用AI自动生成试卷")  // API描述
     public Result<Paper> createPaperWithAI(@RequestBody AiPaperVo aiPaperVo) {
@@ -105,6 +109,7 @@ public class PaperController {
      * @param status 新的状态
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping("/{id}/status")  // 处理POST请求
     @Operation(summary = "更新试卷状态", description = "修改试卷状态：发布试卷供学生考试或停止试卷禁止考试")  // API描述
     public Result<Void> updatePaperStatus(
@@ -119,6 +124,7 @@ public class PaperController {
      * @param id 试卷ID
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @DeleteMapping("/{id}")  // 处理DELETE请求
     @Operation(summary = "删除试卷", description = "删除指定的试卷，注意：已发布的试卷不能删除")  // API描述
     public Result<Void> deletePaper(@Parameter(description = "试卷ID") @PathVariable Integer id) {

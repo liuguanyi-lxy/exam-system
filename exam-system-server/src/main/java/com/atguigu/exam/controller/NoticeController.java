@@ -1,5 +1,6 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Notice;
 import com.atguigu.exam.service.NoticeService;
@@ -80,6 +81,7 @@ public class NoticeController {
      * @param notice 公告对象
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PostMapping("/add")  // 处理POST请求
     @Operation(summary = "发布新公告", description = "创建并发布新的系统公告")  // API描述
     public Result<String> addNotice(@RequestBody Notice notice) {
@@ -91,6 +93,7 @@ public class NoticeController {
      * @param notice 公告对象
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PutMapping("/update")  // 处理PUT请求
     @Operation(summary = "更新公告信息", description = "修改公告的内容、标题、类型等信息")  // API描述
     public Result<String> updateNotice(@RequestBody Notice notice) {
@@ -102,6 +105,7 @@ public class NoticeController {
      * @param id 公告ID
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @DeleteMapping("/delete/{id}")  // 处理DELETE请求
     @Operation(summary = "删除公告", description = "根据ID删除指定的公告")  // API描述
     public Result<String> deleteNotice(
@@ -115,6 +119,7 @@ public class NoticeController {
      * @param isActive 是否启用
      * @return 操作结果
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @PutMapping("/toggle/{id}")  // 处理PUT请求
     @Operation(summary = "切换公告状态", description = "启用或禁用指定的公告，禁用后不会在前台显示")  // API描述
     public Result<String> toggleNoticeStatus(

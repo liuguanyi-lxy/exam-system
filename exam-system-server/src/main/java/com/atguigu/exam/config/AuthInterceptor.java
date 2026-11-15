@@ -49,7 +49,33 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 将用户信息放入请求上下文，供后续使用
         request.setAttribute("userId", tokenUtil.getUserId(token));
         request.setAttribute("userRole", tokenUtil.getRole(token));
+
+        // 角色校验：读取 Handler 方法/类上的 @RequireRole，方法级优先于类级
+        if (handler instanceof org.springframework.web.method.HandlerMethod handlerMethod) {
+            com.atguigu.exam.annotation.RequireRole required = handlerMethod.getMethodAnnotation(com.atguigu.exam.annotation.RequireRole.class);
+            if (required == null) {
+                required = handlerMethod.getBeanType().getAnnotation(com.atguigu.exam.annotation.RequireRole.class);
+            }
+            if (required != null && !isRoleAllowed(tokenUtil.getRole(token), required.value())) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.setContentType("application/json;charset=UTF-8");
+                Result<Void> error = Result.error(403, "无权限执行该操作");
+                response.getWriter().write(OBJECT_MAPPER.writeValueAsString(error));
+                log.warn("请求被拒绝：角色不足访问 {}，需要 {}", uri, String.join("/", required.value()));
+                return false;
+            }
+        }
         return true;
+    }
+
+    /** 当前角色是否在允许列表内 */
+    private boolean isRoleAllowed(String role, String[] allowedRoles) {
+        for (String allowed : allowedRoles) {
+            if (allowed.equals(role)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 从 Authorization 头解析 token */

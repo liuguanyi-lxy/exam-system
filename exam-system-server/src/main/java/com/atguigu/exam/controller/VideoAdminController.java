@@ -1,5 +1,6 @@
 package com.atguigu.exam.controller;
 
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Video;
 import com.atguigu.exam.service.VideoService;
@@ -19,6 +20,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/videos")
+@RequireRole({"TEACHER", "ADMIN"}) // 视频管理全接口仅教师/管理员
 @Tag(name = "视频管理(管理端)", description = "管理端视频相关操作，包括视频管理、审核、统计等功能")
 public class VideoAdminController {
 
