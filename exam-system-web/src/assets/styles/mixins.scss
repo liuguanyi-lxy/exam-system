@@ -1,39 +1,34 @@
 // ============================================================
-// SCSS 混合宏 — 玻璃态 / 渐变 / 卡片悬停 / 动画
+// SCSS 混合宏 — 卡片 / 标题 / 悬停 / 动画
+// 约定：不再使用毛玻璃与渐变文字，靠"白底 + 1px 边框 + 极轻阴影"分层
 // ============================================================
 @import './variables';
 
-// 玻璃态卡片
-@mixin glass($blur: 16px, $opacity: 0.7) {
-  background: rgba(255, 255, 255, $opacity);
-  backdrop-filter: blur($blur);
-  -webkit-backdrop-filter: blur($blur);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: $shadow-md;
+// 标准卡片（沿用旧名字 glass，避免大面积改引用）
+@mixin glass($blur: 16px, $opacity: 1) {
+  background: $surface;
+  border: 1px solid $border;
+  box-shadow: $shadow-sm;
 }
 
-// 玻璃态深色变体
-@mixin glass-dark($blur: 16px, $opacity: 0.25) {
-  background: rgba(30, 41, 59, $opacity);
-  backdrop-filter: blur($blur);
-  -webkit-backdrop-filter: blur($blur);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+// 深色卡片
+@mixin glass-dark($blur: 16px, $opacity: 1) {
+  background: #141c2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-// 渐变文字
+// 标题文字：纯色，不再做渐变裁切
 @mixin gradient-text {
-  background: $gradient-text;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: $text-primary;
 }
 
-// 卡片悬停抬起效果
-@mixin card-hover($lift: -4px, $glow: false) {
-  transition: transform $transition-normal, box-shadow $transition-normal;
+// 卡片悬停：轻微抬起，阴影不夸张
+@mixin card-hover($lift: -2px, $glow: false) {
+  transition: transform $transition-normal, box-shadow $transition-normal,
+    border-color $transition-normal;
   &:hover {
     transform: translateY($lift);
+    border-color: $border-strong;
     @if $glow {
       box-shadow: $shadow-glow-soft;
     } @else {
@@ -47,39 +42,28 @@
   animation: fade-in-up $transition-normal ease-out both;
 }
 
-// 渐变主按钮
+// 主按钮（沿用旧名字，视觉上改为纯主色）
 @mixin gradient-button {
-  background: $gradient-primary;
+  background: $primary;
   border: none;
   color: #fff;
-  transition: all $transition-normal;
+  transition: background $transition-fast, box-shadow $transition-fast;
   &:hover {
-    box-shadow: $shadow-glow;
-    transform: translateY(-1px);
+    background: $primary-dark;
     color: #fff;
   }
   &:active {
-    transform: translateY(0);
+    background: $primary-dark;
   }
 }
 
-// 装饰性圆点背景
-@mixin dotted-bg($color: rgba(79, 70, 229, 0.12), $size: 24px) {
+// 网格纹理（登录页/空状态背景用，极淡）
+@mixin dotted-bg($color: rgba(15, 23, 42, 0.06), $size: 24px) {
   background-image: radial-gradient($color 1px, transparent 1px);
   background-size: $size $size;
 }
 
-// 顶部渐变色带
+// 顶部彩条（已不推荐使用，保留空实现兼容老引用）
 @mixin top-accent($color1: $primary, $color2: $secondary) {
   position: relative;
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, $color1, $color2);
-    border-radius: $radius-lg $radius-lg 0 0;
-  }
 }

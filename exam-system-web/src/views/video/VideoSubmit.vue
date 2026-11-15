@@ -120,7 +120,7 @@ onMounted(async () => {
   max-width: 480px;
   padding: 28px;
   border: 2px dashed $primary-lighter;
-  border-radius: 14px;
+  border-radius: 10px;
   text-align: center;
   cursor: pointer;
   background: rgba(238, 242, 255, 0.4);

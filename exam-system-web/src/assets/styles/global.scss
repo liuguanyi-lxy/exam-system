@@ -1,6 +1,6 @@
 // ============================================================
 // 全局样式 — 智能考试系统
-// 设计语言：现代玻璃态 + 靛蓝/紫渐变 + 微交互
+// 设计语言：中性灰底 + 白色卡片 + 1px 边框 + 克制的品牌色
 // ============================================================
 @import './variables';
 @import './mixins';
@@ -18,9 +18,10 @@ html {
 
 body {
   font-family: $font-family;
+  font-size: 14px;
+  line-height: 1.6;
   color: $text-primary;
-  background: $gradient-bg;
-  background-attachment: fixed;
+  background: $bg;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -31,44 +32,69 @@ a {
   transition: color $transition-fast;
 }
 
+h1, h2, h3, h4 {
+  color: $text-primary;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
 // ---- 页面布局容器 ----
 .page-container {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: $surface;
+  border: 1px solid $border;
   border-radius: $radius-xl;
   padding: $space-6;
-  min-height: calc(100vh - 180px);
-  box-shadow: $shadow-md;
+  box-shadow: $shadow-sm;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: $space-4;
+  padding-bottom: $space-4;
   margin-bottom: $space-5;
+  border-bottom: 1px solid $border;
+
   h2 {
-    font-size: 20px;
-    font-weight: 700;
-    background: $gradient-text;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-size: 18px;
+    font-weight: 600;
+    color: $text-primary;
+    display: flex;
+    align-items: center;
+    gap: $space-2;
   }
 }
 
-// ---- 搜索栏（玻璃态）----
+// 页面主标题（业务页通用）
+.page-title-block {
+  margin-bottom: $space-5;
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: $space-1;
+  }
+  .page-subtitle {
+    font-size: 13px;
+    color: $text-muted;
+  }
+}
+
+// ---- 筛选栏 ----
 .search-bar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: $space-3;
   margin-bottom: $space-4;
-  padding: $space-4;
-  background: rgba(238, 242, 255, 0.5);
-  border: 1px solid rgba(199, 210, 254, 0.5);
-  border-radius: $radius-lg;
-  .el-input, .el-select {
+  padding: $space-3 $space-4;
+  background: $bg-soft;
+  border: 1px solid $border;
+  border-radius: $radius-md;
+
+  .el-input,
+  .el-select {
     width: 200px;
   }
 }
@@ -85,20 +111,20 @@ a {
 .text-info { color: $info; }
 
 .text-gradient {
-  @include gradient-text;
+  color: $text-primary;
 }
 
-// ---- 通用玻璃卡片 ----
+// ---- 通用卡片 ----
 .glass-card {
   @include glass;
-  border-radius: $radius-lg;
+  border-radius: $radius-xl;
 }
 
 // ---- 动画 ----
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -111,74 +137,173 @@ a {
   to { opacity: 1; }
 }
 
-@keyframes float-orb {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(20px, -30px) scale(1.1); }
-  66% { transform: translate(-15px, 20px) scale(0.95); }
-}
-
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
 .fade-in { animation: fade-in $transition-normal ease-out both; }
 .slide-up { animation: fade-in-up $transition-normal ease-out both; }
 
-// ---- 滚动条美化 ----
+// ---- 滚动条 ----
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c7d2fe;
-  border-radius: 3px;
+  background: #d7dbe2;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
   &:hover {
-    background: $primary-light;
+    background: #b9bfc9;
+    background-clip: content-box;
   }
 }
 
-// ---- Element Plus 主题覆盖 ----
+// ============================================================
+// Element Plus 主题覆盖
+// ============================================================
 .el-button {
   font-weight: 500;
   transition: all $transition-fast;
 }
 
-.el-card {
-  border-radius: $radius-lg;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  transition: transform $transition-normal, box-shadow $transition-normal;
+// 统一控件圆角：老代码里的 round（胶囊）按钮也收成 8px，避免形状混杂
+.el-button.is-round {
+  border-radius: $radius-md;
 }
 
+// 表格里的操作按钮：改成浅底彩字，避免每行三个实心色块把视线全抢走
 .el-table {
-  --el-table-header-bg-color: #f8fafc;
-  --el-table-row-hover-bg-color: #f5f3ff;
-  border-radius: $radius-md;
-  th.el-table__cell {
-    font-weight: 600;
-    color: $text-secondary;
+  .el-button--danger:not(.is-link):not(.is-text) {
+    --el-button-bg-color: #fef3f2;
+    --el-button-border-color: #fecdca;
+    --el-button-text-color: #b42318;
+    --el-button-hover-bg-color: #fee4e2;
+    --el-button-hover-border-color: #fda29b;
+    --el-button-hover-text-color: #912018;
+    --el-button-active-bg-color: #fee4e2;
+    --el-button-active-border-color: #fda29b;
+  }
+  .el-button--warning:not(.is-link):not(.is-text) {
+    --el-button-bg-color: #fffaeb;
+    --el-button-border-color: #fedf89;
+    --el-button-text-color: #b54708;
+    --el-button-hover-bg-color: #fef0c7;
+    --el-button-hover-border-color: #fec84b;
+    --el-button-hover-text-color: #93370d;
+    --el-button-active-bg-color: #fef0c7;
+    --el-button-active-border-color: #fec84b;
+  }
+  .el-button--success:not(.is-link):not(.is-text) {
+    --el-button-bg-color: #ecfdf3;
+    --el-button-border-color: #a6f4c5;
+    --el-button-text-color: #067647;
+    --el-button-hover-bg-color: #d1fadf;
+    --el-button-hover-border-color: #75e0a7;
+    --el-button-hover-text-color: #05603a;
+    --el-button-active-bg-color: #d1fadf;
+    --el-button-active-border-color: #75e0a7;
   }
 }
 
+.el-button--large {
+  height: 40px;
+}
+
+.el-input,
+.el-select,
+.el-textarea {
+  --el-input-border-color: #{$border};
+  --el-input-hover-border-color: #{$border-strong};
+  --el-input-focus-border-color: #{$primary};
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  transition: box-shadow $transition-fast;
+}
+
+.el-card {
+  border-radius: $radius-xl;
+  border: 1px solid $border;
+  box-shadow: $shadow-sm;
+}
+
+// ---- 表格：表头浅灰、行分隔、悬停淡灰 ----
+.el-table {
+  --el-table-header-bg-color: #{$bg-soft};
+  --el-table-header-text-color: #{$text-secondary};
+  --el-table-row-hover-bg-color: #{$bg-soft};
+  --el-table-border-color: #{$border};
+  font-size: 13px;
+
+  th.el-table__cell {
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.2px;
+    padding: 10px 0;
+  }
+  td.el-table__cell {
+    padding: 12px 0;
+  }
+  &::before {
+    display: none;
+  }
+  .el-table__inner-wrapper::before {
+    display: none;
+  }
+}
+
+// ---- 弹窗 ----
 .el-dialog {
   border-radius: $radius-xl;
   overflow: hidden;
+  box-shadow: $shadow-xl;
+  padding: 0;
+
   .el-dialog__header {
-    background: $gradient-header;
+    background: $surface;
     margin-right: 0;
     padding: $space-4 $space-6;
+    border-bottom: 1px solid $border;
   }
   .el-dialog__title {
+    font-size: 16px;
     font-weight: 600;
+    color: $text-primary;
+  }
+  .el-dialog__body {
+    padding: $space-6;
+  }
+  .el-dialog__footer {
+    padding: $space-4 $space-6;
+    border-top: 1px solid $border;
   }
 }
 
 .el-menu {
   border-right: none;
+}
+
+// 描述列表（考试信息等）：边框与标签底色跟随令牌
+.el-descriptions {
+  --el-descriptions-table-border: 1px solid #{$border};
+
+  .el-descriptions__label.el-descriptions__cell.is-bordered-label {
+    background: $bg-soft;
+    color: $text-muted;
+    font-weight: 400;
+  }
+  .el-descriptions__cell {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+}
+
+// 标签页
+.el-tabs__item {
+  font-size: 13.5px;
 }
 
 .el-tag {
@@ -199,18 +324,41 @@ a {
   border-radius: $radius-lg;
 }
 
-// 渐变主按钮（用于"开始考试"等主操作）
-.btn-gradient {
-  background: $gradient-primary;
-  border: none;
-  color: #fff !important;
-  &:hover {
-    box-shadow: $shadow-glow;
-    transform: translateY(-1px);
+.el-empty {
+  padding: $space-8 0;
+  .el-empty__description p {
+    color: $text-muted;
+    font-size: 13px;
   }
 }
 
-// 卡片通用悬停
+// 主按钮（业务页大量使用该类名）
+.btn-gradient {
+  --el-button-bg-color: #{$primary};
+  --el-button-border-color: #{$primary};
+  --el-button-hover-bg-color: #{$primary-dark};
+  --el-button-hover-border-color: #{$primary-dark};
+  --el-button-active-bg-color: #{$primary-dark};
+  --el-button-active-border-color: #{$primary-dark};
+  --el-button-text-color: #fff;
+  --el-button-hover-text-color: #fff;
+  background: $primary;
+  border-color: $primary;
+  color: #fff !important;
+  box-shadow: none;
+
+  &:hover {
+    background: $primary-dark;
+    border-color: $primary-dark;
+    color: #fff !important;
+  }
+  &:active {
+    background: $primary-dark;
+    border-color: $primary-dark;
+  }
+}
+
+// 卡片悬停
 .card-hover {
-  @include card-hover(-3px, true);
+  @include card-hover(-2px, false);
 }

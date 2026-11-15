@@ -4,7 +4,7 @@
     <div class="exam-header">
       <div class="header-left">
         <span class="exam-title">{{ exam.paper?.name || '考试中' }}</span>
-        <span class="exam-student">考生: {{ examStore.currentExam?.studentName || '' }}</span>
+        <span class="exam-student">考生：{{ examStore.currentExam?.studentName || userStore.realName || userStore.username || '-' }}</span>
       </div>
       <div class="header-right">
         <div class="exam-timer" :class="{ warning: exam.remainingSeconds < 300 }">
@@ -21,7 +21,7 @@
         <div v-for="(q, i) in exam.paper?.questions" :key="q.id" :id="`q-${i}`" class="question-card">
           <div class="q-header">
             <span class="q-num">{{ i + 1 }}</span>
-            <el-tag size="small" effect="light">{{ q.type === 'CHOICE' ? '选择题' : q.type === 'JUDGE' ? '判断题' : '简答题' }}</el-tag>
+            <el-tag size="small" effect="light">{{ typeLabel(q.type) }}</el-tag>
             <el-tag size="small" effect="plain" :type="q.difficulty === 'EASY' ? 'success' : q.difficulty === 'MEDIUM' ? 'warning' : 'danger'">
               {{ q.difficulty === 'EASY' ? '简单' : q.difficulty === 'MEDIUM' ? '中等' : '困难' }}
             </el-tag>
@@ -32,10 +32,10 @@
           <!-- 选择题 -->
           <template v-if="q.type === 'CHOICE'">
             <el-radio-group v-model="answers[q.id]" class="choices-group" :class="{ multi: q.multi }">
-              <div v-for="ch in q.choices" :key="ch.sort" class="choice-item" :class="{ selected: isChoiceSelected(q, ch.content) }">
+              <div v-for="(ch, ci) in q.choices" :key="ch.sort" class="choice-item" :class="{ selected: isChoiceSelected(q, ch.content) }">
                 <el-checkbox v-if="q.multi" :model-value="isChoiceSelected(q, ch.content)"
-                  @change="(v) => toggleMultiChoice(q, ch.content, v)" :label="`${String.fromCharCode(65 + ch.sort)}. ${ch.content}`" />
-                <el-radio v-else :value="ch.content">{{ String.fromCharCode(65 + ch.sort) }}. {{ ch.content }}</el-radio>
+                  @change="(v) => toggleMultiChoice(q, ch.content, v)" :label="`${letterOf(ci)}. ${ch.content}`" />
+                <el-radio v-else :value="ch.content">{{ letterOf(ci) }}. {{ ch.content }}</el-radio>
               </div>
             </el-radio-group>
           </template>
@@ -51,6 +51,20 @@
           <!-- 简答题 -->
           <template v-if="q.type === 'TEXT'">
             <el-input v-model="answers[q.id]" type="textarea" :rows="4" placeholder="请输入你的答案" class="text-answer" />
+          </template>
+
+          <!-- 手写代码题：等宽字体 + 可用 Tab 缩进，允许写伪代码 -->
+          <template v-if="q.type === 'CODE'">
+            <div class="code-hint">可用伪代码作答，注意体现数据结构、关键步骤与边界处理</div>
+            <el-input
+              v-model="answers[q.id]"
+              type="textarea"
+              :rows="12"
+              spellcheck="false"
+              placeholder="// 在这里写代码，例如：&#10;// class LRUCache { ... }"
+              class="code-answer"
+              @keydown.tab.prevent="insertIndent($event, q.id)"
+            />
           </template>
         </div>
       </div>
@@ -92,14 +106,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useExamStore } from '@/stores/exam'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const examStore = useExamStore()
+const userStore = useUserStore()
 const exam = computed(() => examStore.currentExam)
 const answers = reactive(examStore.currentExam?.answers || {})
 const showSubmitDialog = ref(false)
@@ -108,6 +124,28 @@ const currentIndex = ref(0)
 
 const answeredCount = computed(() => Object.values(answers).filter(v => v).length)
 const unansweredCount = computed(() => (exam.value?.paper?.questions?.length || 0) - answeredCount.value)
+
+// 选项编号按展示顺序生成（A/B/C…），不依赖后端 sort 是否从 0 开始
+function letterOf(index) {
+  return String.fromCharCode(65 + index)
+}
+
+const TYPE_LABELS = { CHOICE: '选择题', JUDGE: '判断题', CODE: '代码题', TEXT: '简答题' }
+function typeLabel(type) {
+  return TYPE_LABELS[type] || '题目'
+}
+
+// 代码题里按 Tab 插入两个空格，而不是把焦点移走
+function insertIndent(e, qid) {
+  const el = e.target
+  const val = answers[qid] || ''
+  const start = el.selectionStart ?? val.length
+  const end = el.selectionEnd ?? start
+  answers[qid] = val.slice(0, start) + '  ' + val.slice(end)
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = start + 2
+  })
+}
 
 function isChoiceSelected(q, content) {
   const ans = answers[q.id]
@@ -173,44 +211,43 @@ onBeforeUnmount(() => {
 
 // 顶部栏
 .exam-header {
-  height: 60px;
-  background: linear-gradient(90deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+  height: 56px;
+  background: #101828;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  padding: 0 20px;
   gap: 24px;
   flex-shrink: 0;
-  box-shadow: 0 4px 20px rgba(30, 27, 75, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     min-width: 0;
-    .exam-title { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .exam-student { font-size: 13px; color: rgba(255,255,255,.7); white-space: nowrap; }
+    .exam-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .exam-student { font-size: 12.5px; color: rgba(255,255,255,.55); white-space: nowrap; }
   }
   .header-right {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     .exam-timer {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 20px;
+      font-weight: 600;
       font-variant-numeric: tabular-nums;
       font-family: $font-mono;
-      padding: 6px 16px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(8px);
+      padding: 5px 14px;
+      border-radius: $radius-md;
+      background: rgba(255, 255, 255, 0.08);
       &.warning {
-        color: #fca5a5;
-        animation: pulse-warning 1s ease-in-out infinite;
+        color: #fda29b;
+        background: rgba(240, 68, 56, 0.16);
       }
     }
   }
@@ -234,7 +271,7 @@ onBeforeUnmount(() => {
 // 题目卡片
 .question-card {
   @include glass;
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 22px 24px;
   margin-bottom: 16px;
   scroll-margin-top: 16px;
@@ -354,48 +391,61 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   flex-shrink: 0;
 
-  h4 { margin-bottom: 16px; font-size: 15px; font-weight: 700; }
+  h4 {
+    margin-bottom: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: $text-primary;
+  }
   .nav-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 8px;
   }
   .nav-item {
-    width: 32px;
-    height: 32px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 9px;
-    background: #f1f5f9;
+    border-radius: $radius-sm;
+    background: $surface;
+    border: 1px solid $border;
+    color: $text-secondary;
     font-size: 12px;
     cursor: pointer;
     transition: all $transition-fast;
     font-weight: 500;
-    &:hover { transform: scale(1.08); }
-    &.answered { background: $gradient-primary; color: #fff; }
-    &.active { outline: 2px solid $primary-dark; outline-offset: 2px; }
+    &:hover { border-color: $primary-lighter; color: $primary; }
+    &.answered {
+      background: $primary;
+      border-color: $primary;
+      color: #fff;
+    }
+    &.active {
+      outline: 2px solid $primary;
+      outline-offset: 2px;
+    }
   }
   .nav-summary {
-    margin-top: 20px;
-    font-size: 13px;
+    margin-top: 18px;
+    font-size: 12.5px;
     color: $text-secondary;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding-top: 16px;
-    border-top: 1px dashed $border;
+    gap: 7px;
+    padding-top: 14px;
+    border-top: 1px solid $border;
     .summary-answered, .summary-unanswered {
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 4px;
-      &.dot-answered { background: $gradient-primary; }
-      &.dot-unanswered { background: #f1f5f9; border: 1px solid $border; }
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      &.dot-answered { background: $primary; }
+      &.dot-unanswered { background: $surface; border: 1px solid $border-strong; }
     }
   }
 }

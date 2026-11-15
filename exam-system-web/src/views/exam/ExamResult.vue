@@ -7,20 +7,26 @@
       </div>
       <h2 class="result-title">考试完成</h2>
       <div class="score-display">
-        <span class="score-num text-gradient">{{ result.score }}</span>
-        <span class="score-total">/ {{ result.paper?.totalScore || 100 }}</span>
+        <span class="score-num">{{ result.score }}</span>
+        <span class="score-total">/ {{ result.paper?.totalScore || 100 }} 分</span>
       </div>
-      <p class="score-label">分</p>
     </div>
     <el-skeleton v-else-if="loading" :rows="5" animated style="padding:20px" />
 
-    <!-- AI 评语 -->
-    <div v-if="result?.summary" class="summary-card slide-up">
+    <!-- 整体评价 -->
+    <div v-if="result" class="summary-card slide-up">
       <div class="summary-head">
         <el-icon class="summary-icon"><ChatLineRound /></el-icon>
-        <span>AI 评语</span>
+        <span>整体评价</span>
       </div>
-      <p class="summary-text">{{ result.summary }}</p>
+      <div class="summary-stats">
+        <div v-for="s in summaryStats" :key="s.label" class="stat">
+          <span class="stat-value">{{ s.value }}</span>
+          <span class="stat-label">{{ s.label }}</span>
+        </div>
+      </div>
+      <p class="summary-text" v-if="result.summary">{{ result.summary }}</p>
+      <p class="summary-empty" v-else>本次考试暂无 AI 评语</p>
     </div>
 
     <!-- 答题详情 -->
@@ -30,15 +36,39 @@
         <div class="a-header">
           <span class="a-index">{{ i + 1 }}</span>
           <el-tag size="small" :type="a.isCorrect === 1 ? 'success' : a.isCorrect === 2 ? 'warning' : 'danger'" effect="light">
-            {{ a.isCorrect === 1 ? '✓ 正确' : a.isCorrect === 2 ? '△ 部分正确' : '✗ 错误' }}
+            {{ a.isCorrect === 1 ? '正确' : a.isCorrect === 2 ? '部分正确' : '错误' }}
           </el-tag>
-          <span class="a-score">{{ a.score || 0 }}分</span>
+          <span class="a-score">{{ a.score || 0 }} 分</span>
         </div>
-        <div class="a-answer">你的答案: {{ a.userAnswer || '(未作答)' }}</div>
-        <div class="a-correct" v-if="correctAnswer(a)">
-          <span class="correct-label">正确答案:</span> {{ correctAnswer(a) }}
+        <!-- 手写代码题：答案按代码块展示，保留缩进 -->
+        <template v-if="typeOf(a) === 'CODE'">
+          <div class="a-code-block">
+            <div class="a-code-title">你的代码</div>
+            <pre class="a-code">{{ a.userAnswer || '（未作答）' }}</pre>
+          </div>
+          <div class="a-code-block" v-if="correctAnswer(a)">
+            <div class="a-code-title">参考实现</div>
+            <pre class="a-code">{{ correctAnswer(a) }}</pre>
+          </div>
+        </template>
+        <template v-else>
+          <div class="a-row">
+            <span class="a-label">你的答案</span>
+            <span class="a-value" :class="{ 'is-empty': !a.userAnswer }">{{ formatUserAnswer(a) || '未作答' }}</span>
+          </div>
+          <div class="a-row" v-if="correctAnswer(a)">
+            <span class="a-label">正确答案</span>
+            <span class="a-value is-correct">{{ correctAnswer(a) }}</span>
+          </div>
+        </template>
+        <div class="a-analysis" v-if="analysisOf(a)">
+          <span class="a-label">解析</span>
+          <span class="a-analysis-text">{{ analysisOf(a) }}</span>
         </div>
-        <div class="a-feedback" v-if="a.aiCorrection">{{ a.aiCorrection }}</div>
+        <div class="a-feedback" v-if="a.aiCorrection">
+          <el-icon :size="14"><InfoFilled /></el-icon>
+          <span>{{ a.aiCorrection }}</span>
+        </div>
       </div>
     </div>
 
@@ -78,7 +108,7 @@ const resultIcon = computed(() => {
   const total = result.value.paper?.totalScore || 100
   const pct = result.value.score / total
   if (pct >= 0.8) return 'CircleCheckFilled'
-  if (pct >= 0.6) return 'SuccessFilled'
+  if (pct >= 0.6) return 'CircleCheck'
   return 'WarningFilled'
 })
 const resultIconClass = computed(() => {
@@ -86,17 +116,29 @@ const resultIconClass = computed(() => {
   const total = result.value.paper?.totalScore || 100
   const pct = result.value.score / total
   if (pct >= 0.8) return 'icon-excellent'
-  if (pct >= 0.6) return 'icon-good'
+  if (pct >= 0.6) return 'icon-pass'
   return 'icon-fail'
 })
 
 // 根据答题记录找到对应题目，返回格式化后的正确答案
+function findQuestion(a) {
+  return (result.value?.paper?.questions || []).find((q) => Number(q.id) === Number(a.questionId))
+}
+
+function typeOf(a) {
+  return findQuestion(a)?.type || 'CHOICE'
+}
+
 function correctAnswer(a) {
-  const q = (result.value?.paper?.questions || []).find((q) => Number(q.id) === Number(a.questionId))
+  const q = findQuestion(a)
   if (!q) return ''
   if (q.type === 'CHOICE') {
-    const c = (q.choices || []).find((c) => c.isCorrect)
-    if (c) return `${String.fromCharCode(65 + c.sort)}. ${c.content}`
+    const choices = q.choices || []
+    // 多选题要把所有正确选项都列出来，只取第一个会误导考生
+    const parts = choices
+      .map((c, i) => (c.isCorrect ? `${String.fromCharCode(65 + i)}. ${c.content}` : null))
+      .filter(Boolean)
+    if (parts.length) return parts.join('　')
     return q.answer?.answer || ''
   }
   if (q.type === 'JUDGE') {
@@ -106,6 +148,53 @@ function correctAnswer(a) {
     return ans || ''
   }
   return q.answer?.answer || ''
+}
+
+// 学生答案补上选项字母，和「正确答案」保持同一种表述
+function formatUserAnswer(a) {
+  const raw = a.userAnswer
+  if (!raw) return ''
+  const q = findQuestion(a)
+  if (!q || q.type !== 'CHOICE') return raw
+  const choices = q.choices || []
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((content) => {
+      const idx = choices.findIndex((c) => c.content === content)
+      return idx >= 0 ? `${String.fromCharCode(65 + idx)}. ${content}` : content
+    })
+    .join('　')
+}
+
+// 每题的解析来自试卷题目（批阅后后端才下发）
+function analysisOf(a) {
+  return findQuestion(a)?.analysis || ''
+}
+
+// 整体评价用到的三个指标
+const summaryStats = computed(() => {
+  const r = result.value
+  if (!r) return []
+  const total = r.paper?.totalScore || 100
+  const answers = r.answerRecords || []
+  const correct = answers.filter((a) => a.isCorrect === 1).length
+  const list = [
+    { label: '得分率', value: `${total ? Math.round((r.score / total) * 100) : 0}%` },
+    { label: '答对题数', value: `${correct} / ${answers.length}` },
+  ]
+  const minutes = usedMinutes(r.startTime, r.endTime)
+  if (minutes !== null) list.push({ label: '用时', value: `${minutes} 分钟` })
+  return list
+})
+
+function usedMinutes(start, end) {
+  if (!start || !end) return null
+  const s = new Date(start.replace(/-/g, '/')).getTime()
+  const e = new Date(end.replace(/-/g, '/')).getTime()
+  if (!s || !e || e <= s) return null
+  return Math.max(1, Math.round((e - s) / 60000))
 }
 
 async function handleGrade() {
@@ -126,104 +215,203 @@ onMounted(async () => {
 @import '@/assets/styles/variables';
 @import '@/assets/styles/mixins';
 
-.result-page { padding: 32px; }
+.result-page { padding: 28px 32px; }
 
 .result-hero {
   text-align: center;
-  padding: 24px 0 32px;
-  animation: fade-in-up 0.5s ease-out both;
+  padding: 8px 0 28px;
+  border-bottom: 1px solid $border;
+  margin-bottom: 20px;
 
   .result-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 84px;
-    height: 84px;
-    border-radius: 26px;
-    margin-bottom: 16px;
-    &.icon-excellent { background: linear-gradient(135deg, #ecfdf5, #d1fae5); color: $success; }
-    &.icon-good { background: linear-gradient(135deg, #fffbeb, #fef3c7); color: $warning; }
-    &.icon-fail { background: linear-gradient(135deg, #fef2f2, #fee2e2); color: $danger; }
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    margin-bottom: 14px;
+    &.icon-excellent { background: #ecfdf3; color: $success; }
+    &.icon-pass { background: $primary-soft; color: $primary; }
+    &.icon-fail { background: #fef3f2; color: $danger; }
   }
-  .result-title { font-size: 20px; font-weight: 600; margin-bottom: 12px; color: $text-primary; }
+  .result-title {
+    font-size: 15px;
+    font-weight: 500;
+    margin-bottom: 10px;
+    color: $text-secondary;
+  }
   .score-display {
     display: flex;
     align-items: baseline;
     justify-content: center;
-    gap: 8px;
-    .score-num { font-size: 64px; font-weight: 800; line-height: 1; }
-    .score-total { font-size: 22px; color: $text-muted; }
+    gap: 6px;
+    .score-num {
+      font-size: 52px;
+      font-weight: 600;
+      line-height: 1;
+      color: $text-primary;
+      font-variant-numeric: tabular-nums;
+    }
+    .score-total { font-size: 16px; color: $text-muted; }
   }
-  .score-label { color: $text-muted; font-size: 14px; margin-top: 4px; }
 }
 
 .summary-card {
   @include glass;
-  border-radius: 16px;
-  padding: 20px 24px;
-  margin-bottom: 24px;
+  border-radius: $radius-lg;
+  padding: 16px 20px;
+  margin-bottom: 20px;
   .summary-head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 700;
+    gap: 7px;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 10px;
+    .summary-icon { color: $primary; font-size: 16px; }
+  }
+  .summary-stats {
+    display: flex;
+    gap: 28px;
+    padding: 12px 0 14px;
     margin-bottom: 12px;
-    .summary-icon { color: $secondary; font-size: 18px; }
+    border-bottom: 1px solid $border;
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      .stat-value {
+        font-size: 18px;
+        font-weight: 600;
+        color: $text-primary;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat-label { font-size: 12px; color: $text-muted; }
+    }
   }
   .summary-text {
     color: $text-secondary;
     line-height: 1.8;
-    font-size: 14px;
+    font-size: 13.5px;
     white-space: pre-line;
   }
+  .summary-empty { font-size: 13px; color: $text-muted; }
 }
 
 .answers-section {
   margin-bottom: 24px;
-  .answers-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+  .answers-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 12px;
+  }
 }
 .answer-card {
   @include glass;
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 12px;
+  border-radius: $radius-lg;
+  padding: 14px 18px;
+  margin-bottom: 10px;
+
   .a-header {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     margin-bottom: 10px;
     .a-index {
-      width: 26px;
-      height: 26px;
-      border-radius: 8px;
-      background: rgba(99,102,241,.1);
-      color: $primary;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: $bg-soft;
+      color: $text-secondary;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
     }
-    .a-score { margin-left: auto; font-weight: 600; color: $text-primary; }
+    .a-score {
+      margin-left: auto;
+      font-size: 13px;
+      font-weight: 600;
+      color: $text-primary;
+      font-variant-numeric: tabular-nums;
+    }
   }
-  .a-answer { color: $text-secondary; margin-bottom: 8px; font-size: 14px; line-height: 1.6; }
-  .a-correct {
-    color: $success;
+
+  .a-row {
+    display: flex;
+    gap: 10px;
+    font-size: 13.5px;
+    line-height: 1.7;
+    padding: 2px 0;
+    .a-label {
+      flex-shrink: 0;
+      width: 60px;
+      color: $text-muted;
+      font-size: 12.5px;
+    }
+    .a-value { color: $text-primary; word-break: break-word; }
+    .a-value.is-empty { color: $text-muted; }
+    .a-value.is-correct { color: #067647; }
+  }
+
+  .a-code-block {
+    margin-top: 10px;
+    .a-code-title {
+      font-size: 12px;
+      color: $text-muted;
+      margin-bottom: 6px;
+    }
+    .a-code {
+      margin: 0;
+      padding: 12px 14px;
+      background: #fbfbfd;
+      border: 1px solid $border;
+      border-radius: $radius-sm;
+      font-family: $font-mono;
+      font-size: 12.5px;
+      line-height: 1.7;
+      color: $text-primary;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 420px;
+      overflow: auto;
+    }
+  }
+
+  .a-analysis {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #fcfcfd;
+    border: 1px solid $border;
+    border-radius: $radius-sm;
     font-size: 13px;
-    margin-bottom: 8px;
-    padding: 8px 14px;
-    background: rgba(16, 185, 129, 0.08);
-    border-radius: 8px;
-    line-height: 1.6;
-    .correct-label { font-weight: 600; }
+    line-height: 1.7;
+    .a-label {
+      flex-shrink: 0;
+      width: 60px;
+      color: $text-muted;
+      font-size: 12.5px;
+    }
+    .a-analysis-text { color: $text-secondary; word-break: break-word; }
   }
+
   .a-feedback {
-    color: $primary;
+    display: flex;
+    gap: 7px;
+    margin-top: 10px;
+    padding: 9px 12px;
+    background: $bg-soft;
+    border-radius: $radius-sm;
+    color: $text-secondary;
     font-size: 13px;
-    background: rgba(99, 102, 241, 0.07);
-    padding: 8px 14px;
-    border-radius: 8px;
-    line-height: 1.6;
+    line-height: 1.65;
+    .el-icon { color: $text-muted; flex-shrink: 0; margin-top: 3px; }
   }
 }
 

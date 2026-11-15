@@ -12,7 +12,7 @@
         <el-col :span="8">
           <el-form-item label="题型" prop="type">
             <el-select v-model="form.type" @change="onTypeChange">
-              <el-option label="选择题" value="CHOICE" /><el-option label="判断题" value="JUDGE" /><el-option label="简答题" value="TEXT" />
+              <el-option label="选择题" value="CHOICE" /><el-option label="判断题" value="JUDGE" /><el-option label="简答题" value="TEXT" /><el-option label="手写代码题" value="CODE" />
             </el-select>
           </el-form-item>
         </el-col>
@@ -55,10 +55,14 @@
         </el-form-item>
       </template>
 
-      <!-- 简答题答案 -->
-      <template v-if="form.type === 'TEXT'">
-        <el-form-item label="参考答案"><el-input v-model="answerText" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="评分关键词"><el-input v-model="answerKeywords" placeholder="多个关键词用逗号分隔" /></el-form-item>
+      <!-- 简答题 / 手写代码题答案 -->
+      <template v-if="form.type === 'TEXT' || form.type === 'CODE'">
+        <el-form-item :label="form.type === 'CODE' ? '参考实现' : '参考答案'">
+          <el-input v-model="answerText" type="textarea" :rows="form.type === 'CODE' ? 10 : 3"
+            :class="{ 'code-input': form.type === 'CODE' }"
+            :placeholder="form.type === 'CODE' ? '选填，AI 判卷会参考它；可写关键代码或伪代码' : ''" />
+        </el-form-item>
+        <el-form-item label="评分关键词"><el-input v-model="answerKeywords" placeholder="多个关键词用逗号分隔（AI 判卷参考）" /></el-form-item>
       </template>
 
       <el-form-item label="题目解析">

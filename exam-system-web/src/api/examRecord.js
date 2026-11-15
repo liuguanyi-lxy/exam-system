@@ -19,3 +19,8 @@ export function deleteExamRecord(id) {
 export function getExamRanking(params) {
   return request.get('/api/exam-records/ranking', { params })
 }
+
+/** GET /api/exam-records/stats?paperId= */
+export function getPaperStats(paperId) {
+  return request.get('/api/exam-records/stats', { params: { paperId } })
+}

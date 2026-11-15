@@ -3,7 +3,7 @@
     <!-- 侧边栏：深色渐变 -->
     <el-aside :width="isCollapse ? '64px' : '220px'" class="admin-aside" :class="{ collapsed: isCollapse }">
       <div class="logo">
-        <span class="logo-icon"><el-icon :size="22"><Reading /></el-icon></span>
+        <span class="logo-icon"><el-icon :size="17"><Reading /></el-icon></span>
         <span v-if="!isCollapse" class="logo-text">智能考试系统</span>
       </div>
       <el-menu
@@ -159,37 +159,33 @@ onBeforeUnmount(() => {
   background: $gradient-sidebar;
   overflow: hidden;
   transition: width $transition-normal;
-  box-shadow: 4px 0 24px rgba(30, 27, 75, 0.3);
   z-index: 10;
 
   .logo {
-    height: 60px;
+    height: 56px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 10px;
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 0 16px;
     color: #fff;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
     .logo-icon {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(8px);
-      color: #a5b4fc;
+      width: 28px;
+      height: 28px;
+      border-radius: $radius-sm;
+      background: $primary;
+      color: #fff;
       flex-shrink: 0;
     }
     .logo-text {
-      font-size: 17px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      background: linear-gradient(135deg, #c7d2fe 0%, #ddd6fe 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 0.2px;
       white-space: nowrap;
     }
   }
@@ -197,53 +193,65 @@ onBeforeUnmount(() => {
   .side-menu {
     background: transparent;
     border-right: none;
-    padding: 8px 0;
+    padding: 10px 0;
 
-    // 菜单项样式
     :deep(.el-menu-item),
     :deep(.el-sub-menu__title) {
-      color: rgba(255, 255, 255, 0.75);
-      height: 48px;
-      line-height: 48px;
+      color: #b9c0cf;
+      height: 40px;
+      line-height: 40px;
       margin: 2px 8px;
-      border-radius: 10px;
-      transition: all $transition-fast;
+      border-radius: $radius-sm;
+      font-size: 13.5px;
+      transition: background $transition-fast, color $transition-fast;
       &:hover {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.06);
         color: #fff;
       }
-      .el-icon { color: inherit; }
+      .el-icon {
+        color: inherit;
+        font-size: 16px;
+      }
     }
 
     // 激活状态
     :deep(.el-menu-item.is-active) {
-      background: linear-gradient(90deg, rgba(99, 102, 241, 0.35), rgba(124, 58, 237, 0.25));
+      background: rgba(255, 255, 255, 0.09);
       color: #fff;
       position: relative;
       &::before {
         content: '';
         position: absolute;
         left: 0;
-        top: 20%;
-        bottom: 20%;
-        width: 3px;
-        border-radius: 3px;
-        background: linear-gradient(180deg, #818cf8, #a78bfa);
+        top: 50%;
+        transform: translateY(-50%);
+        width: 2px;
+        height: 16px;
+        border-radius: 2px;
+        background: $primary-lighter;
       }
     }
 
-    // 子菜单展开背景
+    // 子菜单展开区
     :deep(.el-sub-menu .el-menu) {
-      background: rgba(0, 0, 0, 0.15);
-      border-radius: 10px;
-      margin: 2px 8px;
+      background: transparent;
+      margin: 0;
+      padding: 0;
+    }
+    :deep(.el-sub-menu .el-menu-item) {
+      min-width: auto;
+      padding-left: 44px !important;
+      font-size: 13px;
+      color: #9aa3b5;
     }
 
-    // 折叠时菜单项
+    // 折叠时
     &.el-menu--collapse {
       .el-menu-item,
       .el-sub-menu__title {
-        margin: 2px 4px;
+        margin: 2px 8px;
+        padding: 0 !important;
+        justify-content: center;
       }
     }
   }
@@ -251,32 +259,36 @@ onBeforeUnmount(() => {
 
 // ---- 顶栏 ----
 .admin-header {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  background: $surface;
+  border-bottom: 1px solid $border;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  height: 60px;
+  padding: 0 20px;
+  height: 56px;
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 16px;
     .collapse-btn {
       cursor: pointer;
       color: $text-secondary;
-      transition: all $transition-fast;
-      &:hover { color: $primary; transform: scale(1.1); }
+      transition: color $transition-fast;
+      &:hover { color: $primary; }
     }
     :deep(.el-breadcrumb) {
+      font-size: 13px;
       .el-breadcrumb__inner {
-        color: $text-secondary;
-        font-weight: 500;
-        &.is-link:hover { color: $primary; }
+        color: $text-muted;
+        font-weight: 400;
+        &:hover { color: $text-primary; }
       }
+      .el-breadcrumb__item:last-child .el-breadcrumb__inner {
+        color: $text-primary;
+        font-weight: 500;
+      }
+      .el-breadcrumb__separator { color: $border-strong; }
     }
   }
 
@@ -286,20 +298,22 @@ onBeforeUnmount(() => {
       display: flex;
       align-items: center;
       gap: 8px;
+      font-size: 13.5px;
       color: $text-primary;
-      font-weight: 500;
-      transition: color $transition-fast;
-      &:hover { color: $primary; }
+      padding: 4px 6px;
+      border-radius: $radius-sm;
+      transition: background $transition-fast;
+      &:hover { background: $bg-soft; }
       .avatar {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
-        background: $gradient-primary;
+        background: $primary;
         color: #fff;
-        font-size: 14px;
+        font-size: 12px;
         font-weight: 600;
       }
     }
@@ -323,8 +337,8 @@ onBeforeUnmount(() => {
 
 // ---- 内容区 ----
 .admin-main {
-  background: transparent;
-  padding: 24px;
+  background: $bg;
+  padding: 20px;
   overflow-x: hidden;
 }
 

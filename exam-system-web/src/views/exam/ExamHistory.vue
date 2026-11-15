@@ -31,7 +31,7 @@
       </el-table-column>
       <el-table-column label="操作" width="140">
         <template #default="{ row }">
-          <el-button size="small" type="primary" plain round @click="$router.push(`/exam/result/${row.id}`)">查看详情</el-button>
+          <el-button size="small" link type="primary" @click="$router.push(`/exam/result/${row.id}`)">查看详情</el-button>
         </template>
       </el-table-column>
     </el-table>

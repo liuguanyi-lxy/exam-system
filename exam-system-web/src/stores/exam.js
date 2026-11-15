@@ -16,6 +16,7 @@ export const useExamStore = defineStore('exam', {
       this.currentExam = {
         recordId: record.id,
         paper,
+        studentName: record.studentName || studentName,
         answers: {},
         startTime: Date.now(),
         remainingSeconds: (paper.duration || 60) * 60,

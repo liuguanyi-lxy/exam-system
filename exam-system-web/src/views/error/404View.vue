@@ -1,20 +1,13 @@
 <template>
   <div class="error-page">
-    <!-- 装饰元素 -->
-    <div class="float-orb orb-1"></div>
-    <div class="float-orb orb-2"></div>
-
     <div class="error-card">
-      <div class="error-visual">
-        <el-icon :size="80" class="error-icon"><Files /></el-icon>
-      </div>
-      <h1 class="error-code text-gradient">404</h1>
+      <div class="error-code">404</div>
       <p class="error-desc">抱歉，您访问的页面不存在或已被移除</p>
       <div class="error-actions">
-        <el-button class="btn-gradient" round @click="$router.push('/home')">
+        <el-button type="primary" class="btn-gradient" @click="$router.push('/home')">
           <el-icon style="margin-right:4px"><HomeFilled /></el-icon> 返回首页
         </el-button>
-        <el-button round @click="$router.back()">返回上一页</el-button>
+        <el-button @click="$router.back()">返回上一页</el-button>
       </div>
     </div>
   </div>
@@ -29,58 +22,34 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  overflow: hidden;
+  padding: 24px;
 }
-.float-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(40px);
-  opacity: 0.3;
-  animation: float-orb 10s ease-in-out infinite;
-}
-.orb-1 { width: 260px; height: 260px; background: radial-gradient(circle, rgba(6,182,212,.5), transparent 70%); top: 10%; left: 10%; }
-.orb-2 { width: 200px; height: 200px; background: radial-gradient(circle, rgba(124,58,237,.5), transparent 70%); bottom: 15%; right: 15%; animation-delay: -5s; }
 
 .error-card {
-  position: relative;
-  z-index: 1;
   text-align: center;
-  @include glass(20px, 0.85);
-  border-radius: 24px;
-  padding: 56px 64px;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $radius-xl;
+  padding: 48px 56px;
   max-width: 90vw;
-  animation: fade-in-up 0.5s ease-out both;
 
-  .error-visual {
-    .error-icon {
-      width: 140px;
-      height: 140px;
-      border-radius: 32px;
-      background: linear-gradient(135deg, #ecfeff, #e0f2fe);
-      color: #0ea5e9;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 24px;
-    }
-  }
   .error-code {
-    font-size: 72px;
-    font-weight: 800;
-    letter-spacing: 4px;
+    font-size: 56px;
+    font-weight: 600;
+    letter-spacing: 2px;
     line-height: 1;
-    margin-bottom: 16px;
+    color: $text-primary;
+    margin-bottom: 14px;
   }
   .error-desc {
     color: $text-secondary;
-    font-size: 16px;
-    margin-bottom: 32px;
+    font-size: 14px;
+    margin-bottom: 28px;
   }
   .error-actions {
     display: flex;
     justify-content: center;
-    gap: 12px;
+    gap: 10px;
   }
 }
 </style>

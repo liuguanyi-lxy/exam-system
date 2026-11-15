@@ -3,8 +3,8 @@
     <!-- 统计卡片 -->
     <div class="stat-cards" v-loading="loading">
       <div v-for="item in statCards" :key="item.key" class="stat-card slide-up" :style="{ animationDelay: `${item.delay}ms` }">
-        <div class="stat-icon" :style="{ background: item.gradient }">
-          <el-icon :size="26"><component :is="item.icon" /></el-icon>
+        <div class="stat-icon" :style="{ background: item.bg, color: item.color }">
+          <el-icon :size="20"><component :is="item.icon" /></el-icon>
         </div>
         <div class="stat-info">
           <div class="stat-value">{{ stats[item.key] ?? 0 }}</div>
@@ -67,15 +67,14 @@ import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 // echarts 按需引入（只用饼图+柱状图），全量引入会让构建产物多出约 800KB
 import * as echarts from 'echarts/core'
 import { BarChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getStatsOverview } from '@/api/stats'
 import { getQuestionList } from '@/api/question'
 import { getPaperList } from '@/api/paper'
-import { getBanners } from '@/api/banner'
-import { getVideoCategories } from '@/api/videoCategory'
+import { getCategories } from '@/api/category'
 
-echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
+echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 
 const loading = ref(false)
 const stats = reactive({
@@ -84,12 +83,12 @@ const stats = reactive({
 })
 
 const statCards = [
-  { key: 'questionCount', label: '题目总数', icon: 'EditPen', gradient: 'linear-gradient(135deg,#6366f1,#8b5cf6)', delay: 0 },
-  { key: 'userCount', label: '用户总数', icon: 'User', gradient: 'linear-gradient(135deg,#06b6d4,#3b82f6)', delay: 60 },
-  { key: 'examCount', label: '考试总数', icon: 'Document', gradient: 'linear-gradient(135deg,#10b981,#14b8a6)', delay: 120 },
-  { key: 'todayExamCount', label: '今日考试', icon: 'Lightning', gradient: 'linear-gradient(135deg,#f59e0b,#f97316)', delay: 180 },
-  { key: 'categoryCount', label: '分类数量', icon: 'Folder', gradient: 'linear-gradient(135deg,#8b5cf6,#d946ef)', delay: 240 },
-  { key: 'paperCount', label: '试卷总数', icon: 'Tickets', gradient: 'linear-gradient(135deg,#ec4899,#f43f5e)', delay: 300 },
+  { key: 'questionCount', label: '题目总数', icon: 'EditPen', bg: '#eef2ff', color: '#4f46e5', delay: 0 },
+  { key: 'userCount', label: '用户总数', icon: 'User', bg: '#eff8ff', color: '#2e90fa', delay: 40 },
+  { key: 'examCount', label: '考试总数', icon: 'Document', bg: '#ecfdf3', color: '#12b76a', delay: 80 },
+  { key: 'todayExamCount', label: '今日考试', icon: 'Lightning', bg: '#fffaeb', color: '#f79009', delay: 120 },
+  { key: 'categoryCount', label: '分类数量', icon: 'Folder', bg: '#f4f3ff', color: '#7a5af8', delay: 160 },
+  { key: 'paperCount', label: '试卷总数', icon: 'Tickets', bg: '#fdf2fa', color: '#ee46bc', delay: 200 },
 ]
 
 // 图表
@@ -97,6 +96,8 @@ const pieRef = ref(null)
 const barRef = ref(null)
 let pieChart = null
 let barChart = null
+// 题目分类字典：categoryId -> 分类名
+const categoryNameMap = ref({})
 
 const DIFFICULTY_MAP = { EASY: '简单', MEDIUM: '中等', HARD: '困难' }
 const COLORS = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899']
@@ -113,7 +114,8 @@ function buildDifficultyData(questions) {
 function buildCategoryData(questions) {
   const map = {}
   questions.forEach((q) => {
-    const name = q.category?.name || '未分类'
+    // 题目列表接口不带嵌套 category，用字典按 categoryId 翻译，否则全被算成"未分类"
+    const name = q.category?.name || categoryNameMap.value[q.categoryId] || '未分类'
     map[name] = (map[name] || 0) + 1
   })
   return Object.entries(map)
@@ -126,74 +128,101 @@ function renderCharts(questions) {
   if (pieRef.value && !pieChart) pieChart = echarts.init(pieRef.value)
   if (barRef.value && !barChart) barChart = echarts.init(barRef.value)
 
+  const empty = !questions.length
+  const emptyOption = {
+    title: {
+      text: '暂无数据',
+      left: 'center',
+      top: 'middle',
+      textStyle: { color: '#98a2b3', fontSize: 13, fontWeight: 'normal' },
+    },
+  }
+
   if (pieChart) {
-    pieChart.setOption({
+    pieChart.setOption(empty ? emptyOption : {
       tooltip: { trigger: 'item' },
-      legend: { bottom: 0, icon: 'circle' },
+      legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { color: '#475467', fontSize: 12 } },
       series: [{
         type: 'pie',
-        radius: ['45%', '70%'],
+        radius: ['52%', '72%'],
         avoidLabelOverlap: true,
-        itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
         label: { show: false },
-        emphasis: { label: { show: true, fontWeight: 'bold', fontSize: 16 } },
+        emphasis: { label: { show: true, fontWeight: 'bold', fontSize: 14 } },
         data: buildDifficultyData(questions),
       }],
-    })
+    }, true)
   }
 
   if (barChart) {
-    const cat = buildCategoryData(questions)
-    barChart.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: 8, right: 16, top: 16, bottom: 24, containLabel: true },
-      xAxis: {
-        type: 'value',
-        splitLine: { lineStyle: { color: '#f1f5f9' } },
-        axisLabel: { color: '#94a3b8' },
-      },
-      yAxis: {
-        type: 'category',
-        data: cat.map((i) => i.name),
-        axisLabel: { color: '#64748b' },
-        axisLine: { show: false },
-        axisTick: { show: false },
-      },
-      series: [{
-        type: 'bar',
-        data: cat.map((i, idx) => ({
-          value: i.value,
-          itemStyle: { color: COLORS[idx % COLORS.length], borderRadius: [0, 8, 8, 0] },
-        })),
-        barWidth: 18,
-        label: { show: true, position: 'right', color: '#64748b' },
-      }],
-    })
+    if (empty) {
+      barChart.setOption(emptyOption, true)
+    } else {
+      const cat = buildCategoryData(questions)
+      barChart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: 8, right: 24, top: 12, bottom: 8, containLabel: true },
+        xAxis: {
+          type: 'value',
+          splitLine: { lineStyle: { color: '#f2f4f7' } },
+          axisLabel: { color: '#98a2b3', fontSize: 11 },
+        },
+        yAxis: {
+          type: 'category',
+          data: cat.map((i) => i.name),
+          axisLabel: { color: '#475467', fontSize: 12 },
+          axisLine: { show: false },
+          axisTick: { show: false },
+        },
+        series: [{
+          type: 'bar',
+          data: cat.map((i, idx) => ({
+            value: i.value,
+            itemStyle: { color: COLORS[idx % COLORS.length], borderRadius: [0, 4, 4, 0] },
+          })),
+          barWidth: 14,
+          label: { show: true, position: 'right', color: '#98a2b3', fontSize: 11 },
+        }],
+      }, true)
+    }
   }
 }
 
 async function loadData() {
   loading.value = true
+  let questions = []
   try {
     const res = await getStatsOverview()
     if (res) Object.assign(stats, res)
+  } catch {
+    // 统计接口不可用时保留默认值，不影响图表渲染
+  }
 
-    // 加载题目做图表
+  try {
+    const cats = await getCategories()
+    const map = {}
+    ;(cats || []).forEach((c) => { map[c.id] = c.name })
+    categoryNameMap.value = map
+    if (!stats.categoryCount && cats?.length) stats.categoryCount = cats.length
+  } catch {
+    categoryNameMap.value = {}
+  }
+
+  try {
     const qRes = await getQuestionList({ page: 1, size: 200 })
-    const questions = qRes?.records || []
-    renderCharts(questions)
+    questions = qRes?.records || []
+  } catch {
+    questions = []
+  }
+  renderCharts(questions)
 
-    // 补充统计：分类/试卷/轮播图（后端 overview 若缺失）
-    try {
-      const [cats, papers, banners] = await Promise.all([
-        getVideoCategories().catch(() => []),
-        getPaperList().catch(() => []),
-        getBanners().catch(() => []),
-      ])
-      if (!stats.categoryCount && cats?.length) stats.categoryCount = cats.length
-      if (!stats.paperCount && papers?.length) stats.paperCount = papers.length
-    } catch {}
-  } finally { loading.value = false }
+  // 补充统计：试卷数量（后端 overview 若缺失）
+  try {
+    const papers = await getPaperList().catch(() => [])
+    if (!stats.paperCount && papers?.length) stats.paperCount = papers.length
+  } catch {}
+
+  loading.value = false
 }
 
 function handleResize() {
@@ -217,104 +246,104 @@ onBeforeUnmount(() => {
 @import '@/assets/styles/variables';
 @import '@/assets/styles/mixins';
 
-.dashboard { padding: 4px; }
+.dashboard { padding: 0; }
 
 // 统计卡片
 .stat-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 20px;
+  gap: 14px;
+  margin-bottom: 14px;
   @media (max-width: 992px) { grid-template-columns: repeat(2, 1fr); }
   @media (max-width: 576px) { grid-template-columns: 1fr; }
 }
 .stat-card {
-  @include glass;
-  border-radius: 16px;
-  padding: 22px;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $radius-xl;
+  padding: 18px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  transition: transform $transition-normal, box-shadow $transition-normal;
-  &:hover { transform: translateY(-3px); box-shadow: $shadow-lg; }
+  gap: 14px;
+  box-shadow: $shadow-sm;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+  &:hover {
+    border-color: $border-strong;
+    box-shadow: $shadow-md;
+  }
   .stat-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: $radius-md;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
   }
-  .stat-value { font-size: 30px; font-weight: 800; color: $text-primary; line-height: 1.1; }
-  .stat-label { font-size: 13px; color: $text-muted; margin-top: 4px; }
+  .stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: $text-primary;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label { font-size: 12.5px; color: $text-muted; margin-top: 2px; }
 }
 
 // 图表
-.chart-row { margin-bottom: 20px; }
+.chart-row { margin-bottom: 0; }
 .chart-card {
-  @include glass;
-  border-radius: 16px;
-  padding: 20px;
-  margin-bottom: 20px;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $radius-xl;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  box-shadow: $shadow-sm;
   .chart-head {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     .chart-title {
-      font-size: 16px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      &::before {
-        content: '';
-        width: 4px;
-        height: 18px;
-        border-radius: 4px;
-        background: $gradient-primary;
-      }
+      font-size: 14px;
+      font-weight: 600;
+      color: $text-primary;
     }
   }
-  .chart-body { height: 300px; }
+  .chart-body { height: 288px; }
 }
 
 // 快捷操作
 .action-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 12px;
   @media (max-width: 768px) { grid-template-columns: repeat(2, 1fr); }
 }
 .action-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 20px 12px;
-  border-radius: 14px;
+  gap: 9px;
+  padding: 18px 12px;
+  border-radius: $radius-lg;
   cursor: pointer;
-  background: rgba(248, 250, 252, 0.8);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  transition: all $transition-normal;
+  background: $surface;
+  border: 1px solid $border;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
   &:hover {
-    transform: translateY(-3px);
-    box-shadow: $shadow-md;
     border-color: $primary-lighter;
+    box-shadow: $shadow-md;
   }
   .action-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+    width: 38px;
+    height: 38px;
+    border-radius: $radius-md;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
-    &.icon-question { background: linear-gradient(135deg,#6366f1,#8b5cf6); }
-    &.icon-paper { background: linear-gradient(135deg,#06b6d4,#3b82f6); }
-    &.icon-ai { background: linear-gradient(135deg,#8b5cf6,#d946ef); }
-    &.icon-banner { background: linear-gradient(135deg,#10b981,#14b8a6); }
+    &.icon-question { background: #eef2ff; color: #4f46e5; }
+    &.icon-paper { background: #eff8ff; color: #2e90fa; }
+    &.icon-ai { background: #f4f3ff; color: #7a5af8; }
+    &.icon-banner { background: #ecfdf3; color: #12b76a; }
   }
-  .action-name { font-size: 14px; font-weight: 500; color: $text-primary; }
+  .action-name { font-size: 13px; font-weight: 500; color: $text-secondary; }
 }
 </style>

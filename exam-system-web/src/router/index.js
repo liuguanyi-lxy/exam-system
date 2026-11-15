@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
+
 const routes = [
   // ========== 公共路由 ==========
   {
@@ -147,6 +148,12 @@ const routes = [
         meta: { title: 'AI组卷' },
       },
       {
+        path: 'papers/:id/records',
+        name: 'PaperRecords',
+        component: () => import('@/views/paper/PaperRecords.vue'),
+        meta: { title: '试卷成绩' },
+      },
+      {
         path: 'exam-records',
         name: 'ExamRecordList',
         component: () => import('@/views/exam-record/ExamRecordList.vue'),
@@ -208,6 +215,7 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
+
   document.title = to.meta.title ? `${to.meta.title} - 智能考试系统` : '智能考试系统'
 
   // 初始化用户信息

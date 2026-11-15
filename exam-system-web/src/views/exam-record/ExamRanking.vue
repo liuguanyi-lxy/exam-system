@@ -5,12 +5,13 @@
     </div>
 
     <div class="search-bar">
-      <el-select v-model="paperId" placeholder="筛选试卷" clearable @change="loadData" style="width:240px">
+      <el-select v-model="paperId" placeholder="按试卷筛选" clearable @change="loadData" style="width:240px">
         <el-option v-for="p in papers" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
+      <span class="search-hint">按得分从高到低排列，仅统计已批阅的考试</span>
     </div>
 
-    <el-table :data="tableData" v-loading="loading" :row-class-name="rowClass">
+    <el-table :data="tableData" v-loading="loading">
       <el-table-column label="排名" width="80">
         <template #default="{ $index }">
           <span v-if="$index < 3" class="rank-badge" :class="`rank-${$index + 1}`">
@@ -54,13 +55,6 @@ const tableData = ref([])
 const papers = ref([])
 const paperId = ref(null)
 
-function rowClass({ rowIndex }) {
-  if (rowIndex === 0) return 'row-first'
-  if (rowIndex === 1) return 'row-second'
-  if (rowIndex === 2) return 'row-third'
-  return ''
-}
-
 async function loadData() {
   loading.value = true
   try { tableData.value = await getExamRanking({ paperId: paperId.value || undefined, limit: 50 }) || []; }
@@ -76,39 +70,46 @@ onMounted(async () => {
 <style lang="scss" scoped>
 @import '@/assets/styles/variables';
 
+.search-hint {
+  font-size: 12.5px;
+  color: $text-muted;
+}
+
 .rank-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-weight: 600;
+  font-size: 12px;
   &.rank-1 {
-    background: linear-gradient(135deg, #f59e0b, #fbbf24);
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    background: #fffaeb;
+    color: #b54708;
   }
   &.rank-2 {
-    background: linear-gradient(135deg, #94a3b8, #cbd5e1);
-    box-shadow: 0 4px 12px rgba(148, 163, 184, 0.4);
+    background: #f2f4f7;
+    color: $text-secondary;
   }
   &.rank-3 {
-    background: linear-gradient(135deg, #d97706, #f59e0b);
-    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.4);
+    background: #fef0e6;
+    color: #b54708;
   }
 }
 .rank-plain {
-  color: $text-secondary;
+  display: inline-block;
+  width: 24px;
+  text-align: center;
+  color: $text-muted;
   font-weight: 500;
-  padding-left: 10px;
 }
 .student-name { font-weight: 500; }
-.score-num { font-size: 18px; font-weight: 700; }
-.score-total { color: $text-muted; font-size: 13px; }
-
-:deep(.row-first) { background: rgba(251, 191, 36, 0.06); }
-:deep(.row-second) { background: rgba(203, 213, 225, 0.06); }
-:deep(.row-third) { background: rgba(245, 158, 11, 0.05); }
+.score-num {
+  font-size: 15px;
+  font-weight: 600;
+  color: $text-primary;
+  font-variant-numeric: tabular-nums;
+}
+.score-total { color: $text-muted; font-size: 12.5px; }
 </style>

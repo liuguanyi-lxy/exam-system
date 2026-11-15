@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
 
 .player-wrap {
   position: relative;
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
   background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
   box-shadow: $shadow-lg;
@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
 
 .video-desc {
   @include glass;
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 18px 20px;
   margin-top: 16px;
   .desc-head {

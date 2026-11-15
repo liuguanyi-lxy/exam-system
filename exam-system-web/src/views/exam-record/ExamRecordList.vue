@@ -3,6 +3,9 @@
     <div class="page-header"><h2>考试记录管理</h2></div>
 
     <div class="search-bar">
+      <el-select v-model="filters.paperId" placeholder="按试卷筛选" clearable filterable style="width:240px">
+        <el-option v-for="p in papers" :key="p.id" :label="p.name" :value="p.id" />
+      </el-select>
       <el-input v-model="filters.studentName" placeholder="考生姓名" clearable style="width:180px" />
       <el-select v-model="filters.status" placeholder="状态" clearable style="width:140px">
         <el-option label="进行中" :value="0" /><el-option label="已完成" :value="1" /><el-option label="已批阅" :value="2" />
@@ -52,18 +55,21 @@
 import { ref, reactive } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { getExamRecordList, deleteExamRecord } from '@/api/examRecord'
+import { getPaperList } from '@/api/paper'
 
 const loading = ref(false)
 const tableData = ref([])
 const page = ref(1)
 const size = ref(20)
 const total = ref(0)
-const filters = reactive({ studentName: '', status: null, startDate: '', endDate: '' })
+const filters = reactive({ paperId: null, studentName: '', status: null, startDate: '', endDate: '' })
+const papers = ref([])
 
 async function loadData() {
   loading.value = true
   try {
     const params = { page: page.value, size: size.value }
+    if (filters.paperId) params.paperId = filters.paperId
     if (filters.studentName) params.studentName = filters.studentName
     if (filters.status != null) params.status = filters.status
     if (filters.startDate) params.startDate = filters.startDate
@@ -75,7 +81,7 @@ async function loadData() {
 }
 
 function search() { page.value = 1; loadData() }
-function resetFilters() { Object.assign(filters, { studentName: '', status: null, startDate: '', endDate: '' }); search() }
+function resetFilters() { Object.assign(filters, { paperId: null, studentName: '', status: null, startDate: '', endDate: '' }); search() }
 
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确认删除考生"${row.studentName}"的考试记录？`, '警告', { type: 'warning' })
@@ -85,5 +91,8 @@ async function handleDelete(row) {
 }
 
 import { onMounted } from 'vue'
-onMounted(loadData)
+onMounted(async () => {
+  try { papers.value = await getPaperList() || [] } catch { papers.value = [] }
+  loadData()
+})
 </script>

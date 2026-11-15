@@ -31,17 +31,17 @@
           </div>
         </div>
         <el-descriptions :column="2" border class="paper-descs">
-          <el-descriptions-item label="考试时长">
-            <span class="desc-val"><el-icon><Clock /></el-icon> {{ paper.duration }} 分钟</span>
+          <el-descriptions-item label="时长">
+            <span class="desc-val">{{ paper.duration }} 分钟</span>
           </el-descriptions-item>
-          <el-descriptions-item label="题目数量">
-            <span class="desc-val"><el-icon><Document /></el-icon> {{ paper.questionCount }} 题</span>
+          <el-descriptions-item label="题量">
+            <span class="desc-val">{{ paper.questionCount }} 题</span>
           </el-descriptions-item>
           <el-descriptions-item label="总分">
-            <span class="desc-val text-gradient desc-score">{{ paper.totalScore }} 分</span>
+            <span class="desc-val desc-score">{{ paper.totalScore }} 分</span>
           </el-descriptions-item>
-          <el-descriptions-item label="试卷描述">
-            {{ paper.description || '暂无描述' }}
+          <el-descriptions-item label="说明">
+            <span class="desc-val desc-desc">{{ paper.description || '暂无描述' }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>
@@ -120,21 +120,21 @@ async function handleStart() {
 @import '@/assets/styles/mixins';
 
 .page-head {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
   .page-title {
-    font-size: 24px;
-    font-weight: 700;
-    margin-bottom: 6px;
-    @include gradient-text;
+    font-size: 22px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 4px;
   }
-  .sub { color: $text-muted; font-size: 14px; }
+  .sub { color: $text-muted; font-size: 13px; }
 }
 
 .glass-card {
   @include glass;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 20px;
+  border-radius: $radius-xl;
+  padding: 20px 24px;
+  margin-bottom: 16px;
 }
 
 // 试卷信息
@@ -142,25 +142,39 @@ async function handleStart() {
   .paper-name-row {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 20px;
+    gap: 12px;
+    margin-bottom: 18px;
     .paper-type-icon {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-      background: $gradient-primary;
-      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: $radius-md;
+      background: $primary-soft;
+      color: $primary;
       flex-shrink: 0;
     }
-    .paper-name { font-size: 18px; font-weight: 700; }
+    .paper-name { font-size: 16px; font-weight: 600; color: $text-primary; }
     .paper-status { margin-top: 4px; }
   }
   .paper-descs {
-    .desc-val { display: flex; align-items: center; gap: 6px; font-weight: 500; }
-    .desc-score { font-weight: 700; }
+    // 固定表格布局，否则「说明」那一格内容长会把「时长」列挤窄，出现"60 分/钟"折行
+    :deep(.el-descriptions__body table) { table-layout: fixed; }
+    :deep(.el-descriptions__label) {
+      color: $text-muted;
+      font-weight: 400;
+      width: 64px;
+      white-space: nowrap;
+    }
+    :deep(.el-descriptions__content) {
+      color: $text-primary;
+      white-space: normal;
+      word-break: break-word;
+    }
+    .desc-val { display: inline; }
+    .desc-score { font-weight: 600; }
+    .desc-desc { color: $text-secondary; }
   }
 }
 
@@ -189,10 +203,10 @@ async function handleStart() {
 }
 
 .start-btn {
-  width: 200px;
-  height: 46px;
-  font-size: 16px;
-  letter-spacing: 3px;
+  min-width: 180px;
+  height: 42px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 // 成功卡片

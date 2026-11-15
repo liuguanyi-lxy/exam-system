@@ -87,7 +87,7 @@ onMounted(async () => {
 
 .video-card {
   cursor: pointer;
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
   background: #fff;
   border: 1px solid rgba(226, 232, 240, 0.7);

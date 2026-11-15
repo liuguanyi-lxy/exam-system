@@ -25,7 +25,7 @@
         <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
       </el-select>
       <el-select v-model="filterType" placeholder="题型" clearable @change="loadQuestions" style="width:120px">
-        <el-option label="选择题" value="CHOICE" /><el-option label="判断题" value="JUDGE" /><el-option label="简答题" value="TEXT" />
+        <el-option label="选择题" value="CHOICE" /><el-option label="判断题" value="JUDGE" /><el-option label="简答题" value="TEXT" /><el-option label="代码题" value="CODE" /><el-option label="代码题" value="CODE" />
       </el-select>
       <el-input v-model="filterKeyword" placeholder="搜索" clearable @keyup.enter="loadQuestions" style="width:180px" />
       <el-button @click="loadQuestions">搜索</el-button>
@@ -34,8 +34,12 @@
     <el-table :data="questionList" ref="qTable" @selection-change="onSelectionChange" v-loading="qLoading" max-height="400">
       <el-table-column type="selection" width="45" />
       <el-table-column prop="title" label="题目" min-width="240" show-overflow-tooltip />
-      <el-table-column label="题型" width="80">{{ filterType || '' }}</el-table-column>
-      <el-table-column label="难度" width="70" />
+      <el-table-column label="题型" width="80">
+        <template #default="{ row }">{{ TYPE_LABELS[row.type] || row.type || '-' }}</template>
+      </el-table-column>
+      <el-table-column label="难度" width="70">
+        <template #default="{ row }">{{ DIFF_LABELS[row.difficulty] || row.difficulty || '-' }}</template>
+      </el-table-column>
       <el-table-column label="分值" width="100">
         <template #default="{ row }">
           <el-input-number v-model="scores[row.id]" :min="1" :max="50" size="small" controls-position="right" style="width:90px" />
@@ -62,6 +66,8 @@ const route = useRoute()
 const router = useRouter()
 const isEdit = computed(() => !!route.query.id)
 const pageLoading = ref(false)
+const TYPE_LABELS = { CHOICE: '选择题', JUDGE: '判断题', TEXT: '简答题', CODE: '代码题' }
+const DIFF_LABELS = { EASY: '简单', MEDIUM: '中等', HARD: '困难' }
 const saving = ref(false)
 const qLoading = ref(false)
 const categories = ref([])

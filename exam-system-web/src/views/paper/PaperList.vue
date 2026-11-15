@@ -4,7 +4,7 @@
       <h2>试卷管理</h2>
       <div>
         <el-button type="primary" @click="$router.push('/admin/papers/create')">手动组卷</el-button>
-        <el-button type="success" @click="$router.push('/admin/papers/ai-create')">AI 智能组卷</el-button>
+        <el-button type="primary" plain @click="$router.push('/admin/papers/ai-create')">AI 智能组卷</el-button>
       </div>
     </div>
 
@@ -29,9 +29,10 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="260">
+      <el-table-column label="操作" width="320">
         <template #default="{ row }">
           <el-button size="small" @click="$router.push(`/admin/papers/create?id=${row.id}`)">编辑</el-button>
+          <el-button size="small" link type="primary" @click="$router.push(`/admin/papers/${row.id}/records`)">考生成绩</el-button>
           <el-button size="small" v-if="row.status === 'DRAFT'" type="success" @click="changeStatus(row, 'PUBLISHED')">发布</el-button>
           <el-button size="small" v-if="row.status === 'PUBLISHED'" type="warning" @click="changeStatus(row, 'STOPPED')">停止</el-button>
           <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>

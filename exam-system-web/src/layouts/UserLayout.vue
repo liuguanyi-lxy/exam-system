@@ -4,7 +4,7 @@
     <header class="user-header">
       <div class="header-content">
         <router-link to="/home" class="logo">
-          <span class="logo-icon"><el-icon :size="22"><Reading /></el-icon></span>
+          <span class="logo-icon"><el-icon :size="18"><Reading /></el-icon></span>
           <span class="logo-text">智能考试系统</span>
         </router-link>
         <nav class="nav-menu">
@@ -37,7 +37,7 @@
             </el-dropdown>
           </template>
           <template v-else>
-            <el-button type="primary" round @click="$router.push('/login')">登录</el-button>
+            <el-button type="primary" @click="$router.push('/login')">登录</el-button>
           </template>
         </div>
         <!-- 移动端汉堡按钮 -->
@@ -81,11 +81,14 @@
     <footer class="user-footer">
       <div class="footer-content">
         <div class="footer-brand">
-          <div class="footer-logo">📚 智能考试系统</div>
-          <p>基于 AI 的智能考试平台，在线考试 · 智能组卷 · AI 批阅</p>
+          <div class="footer-logo">
+            <el-icon :size="16"><Reading /></el-icon>
+            <span>智能考试系统</span>
+          </div>
+          <p>在线考试 · 智能组卷 · AI 批阅</p>
         </div>
         <div class="footer-links">
-          <span>© 2026 智能考试系统. All Rights Reserved.</span>
+          <span>© 2026 智能考试系统</span>
         </div>
       </div>
     </footer>
@@ -127,16 +130,14 @@ function handleLogout() {
   flex-direction: column;
 }
 
-// ---- 毛玻璃粘性顶栏 ----
+// ---- 顶栏 ----
 .user-header {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
-  height: 64px;
+  background: $surface;
+  border-bottom: 1px solid $border;
+  height: 60px;
 
   .header-content {
     max-width: 1200px;
@@ -149,25 +150,25 @@ function handleLogout() {
     .logo {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-right: 40px;
+      gap: 8px;
+      margin-right: 32px;
       white-space: nowrap;
       text-decoration: none;
       .logo-icon {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 38px;
-        height: 38px;
-        border-radius: 11px;
-        background: $gradient-primary;
+        width: 30px;
+        height: 30px;
+        border-radius: $radius-md;
+        background: $primary;
         color: #fff;
-        box-shadow: $shadow-glow;
       }
       .logo-text {
-        font-size: 19px;
-        font-weight: 700;
-        @include gradient-text;
+        font-size: 15px;
+        font-weight: 600;
+        color: $text-primary;
+        letter-spacing: 0.2px;
       }
     }
 
@@ -175,36 +176,26 @@ function handleLogout() {
       flex: 1;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 2px;
 
       .nav-item {
         position: relative;
-        padding: 8px 16px;
-        border-radius: 10px;
-        font-size: 15px;
+        padding: 7px 12px;
+        border-radius: $radius-sm;
+        font-size: 14px;
         color: $text-secondary;
         font-weight: 500;
         transition: all $transition-fast;
         text-decoration: none;
 
         &:hover {
-          color: $primary;
-          background: rgba(99, 102, 241, 0.08);
+          color: $text-primary;
+          background: $bg-soft;
         }
         &.active {
           color: $primary;
-          font-weight: 600;
-          &::after {
-            content: '';
-            position: absolute;
-            bottom: 2px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 20px;
-            height: 3px;
-            border-radius: 3px;
-            background: $gradient-primary;
-          }
+          background: $primary-soft;
+          font-weight: 500;
         }
       }
     }
@@ -216,20 +207,23 @@ function handleLogout() {
         display: flex;
         align-items: center;
         gap: 8px;
+        font-size: 14px;
         font-weight: 500;
         color: $text-primary;
-        transition: color $transition-fast;
-        &:hover { color: $primary; }
+        padding: 4px 6px;
+        border-radius: $radius-sm;
+        transition: background $transition-fast;
+        &:hover { background: $bg-soft; }
         .avatar {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 32px;
-          height: 32px;
+          width: 28px;
+          height: 28px;
           border-radius: 50%;
-          background: $gradient-primary;
+          background: $primary;
           color: #fff;
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 600;
         }
       }
@@ -237,8 +231,8 @@ function handleLogout() {
 
     .mobile-menu-btn {
       display: none;
-      margin-left: 12px;
-      color: $text-primary;
+      margin-left: 10px;
+      color: $text-secondary;
       cursor: pointer;
       &:hover { color: $primary; }
     }
@@ -257,7 +251,7 @@ function handleLogout() {
       padding: 0 14px;
       .logo {
         margin-right: 0;
-        .logo-text { font-size: 17px; }
+        .logo-text { font-size: 15px; }
       }
       .nav-menu { display: none; }
       .header-right {
@@ -268,29 +262,27 @@ function handleLogout() {
     .mobile-menu {
       display: block;
       position: absolute;
-      top: 64px;
+      top: 60px;
       left: 0;
       right: 0;
-      background: rgba(255, 255, 255, 0.98);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      background: $surface;
       border-bottom: 1px solid $border;
       box-shadow: $shadow-lg;
-      padding: 8px 14px 14px;
+      padding: 8px 12px 12px;
 
       .mobile-item {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 12px 10px;
-        border-radius: $radius-md;
-        font-size: 15px;
+        padding: 11px 10px;
+        border-radius: $radius-sm;
+        font-size: 14px;
         color: $text-primary;
         font-weight: 500;
         text-decoration: none;
         cursor: pointer;
-        &:hover { background: rgba(99, 102, 241, 0.06); }
-        &.active { color: $primary; font-weight: 600; background: rgba(99, 102, 241, 0.08); }
+        &:hover { background: $bg-soft; }
+        &.active { color: $primary; background: $primary-soft; }
         &.danger { color: $danger; }
       }
       .mobile-divider {
@@ -310,7 +302,7 @@ function handleLogout() {
 .drop-enter-from,
 .drop-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(-6px);
 }
 
 // ---- 内容区 ----
@@ -319,36 +311,40 @@ function handleLogout() {
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 24px 20px 48px;
+  padding: 24px 20px 56px;
 }
 
-// ---- 深色页脚 ----
+// ---- 页脚 ----
 .user-footer {
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
-  color: rgba(255, 255, 255, 0.6);
+  background: $surface;
+  border-top: 1px solid $border;
   margin-top: auto;
 
   .footer-content {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 32px 20px;
+    padding: 24px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
     flex-wrap: wrap;
 
     .footer-brand {
       .footer-logo {
-        font-size: 17px;
-        font-weight: 700;
-        color: #fff;
-        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: $text-primary;
+        margin-bottom: 4px;
       }
-      p { font-size: 13px; }
+      p { font-size: 12px; color: $text-muted; }
     }
     .footer-links {
-      font-size: 13px;
+      font-size: 12px;
+      color: $text-muted;
     }
   }
 }
@@ -360,10 +356,9 @@ function handleLogout() {
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(8px);
 }
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
 }
 </style>
