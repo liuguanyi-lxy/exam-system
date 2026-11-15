@@ -72,5 +72,6 @@ mvn test                     # JWT 与判卷比对单元测试
 ## 说明
 
 - 仓库不含任何密钥；私密配置通过 `application-local.yaml` 或环境变量注入。
+- 生产部署（依赖服务、数据库脚本、打包发布、Nginx 配置）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 - AI 判卷依赖外部 AI 服务，评分结果仅供学习参考，不能替代人工复核。
 - 前后端联调记录见 `exam-system-web/UI-OPTIMIZATION-NOTES.md`。

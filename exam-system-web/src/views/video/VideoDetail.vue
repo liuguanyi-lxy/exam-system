@@ -68,6 +68,9 @@ const video = ref(null)
 const liked = ref(false)
 const videoFailed = ref(false)
 let viewTimer = null
+let reportTimer = null
+let viewSessionId = null
+let pendingDelta = 0
 
 // 外链来源解析：B 站 / YouTube 可提取出内嵌播放地址，其余平台跳转观看
 const external = computed(() => {
@@ -96,21 +99,67 @@ async function handleLike() {
   } catch {}
 }
 
+// ===== 观看时长会话化上报 =====
+// 进入详情页生成会话ID并复用：首次上报计一次观看，之后心跳只累加时长；
+// 页面可见期间每 5 秒累计增量，每 30 秒批量上报，切后台/离开立即上报
+
+function newViewSessionId() {
+  return crypto?.randomUUID
+    ? crypto.randomUUID()
+    : `v-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function flushWatchTime() {
+  const delta = pendingDelta
+  pendingDelta = 0
+  if (delta <= 0 || !video.value || !viewSessionId) return
+  recordVideoView(video.value.id, viewSessionId, delta).catch(() => {})
+}
+
+// 离开页面兜底：sendBeacon 不携带认证头（该接口后端已放行），
+// 避免 axios 请求在页面卸载时被中断导致时长丢失
+function reportOnLeave() {
+  const delta = pendingDelta
+  if (delta <= 0 || !video.value || !viewSessionId) return
+  pendingDelta = 0
+  const params = new URLSearchParams({ sessionId: viewSessionId, viewDuration: String(delta) })
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(`/api/videos/${video.value.id}/view?${params.toString()}`)
+  } else {
+    recordVideoView(video.value.id, viewSessionId, delta).catch(() => {})
+  }
+}
+
+function onVisibilityChange() {
+  // 切到后台立即上报，避免后台期间误累计；回前台后心跳继续累计
+  if (document.visibilityState === 'hidden') flushWatchTime()
+}
+
 onMounted(async () => {
   loading.value = true
   try {
     video.value = await getVideoById(Number(route.params.id))
     liked.value = video.value?.isLiked || false
-    let watchTime = 0
-    viewTimer = setInterval(() => { watchTime++ }, 1000)
-    window.addEventListener('beforeunload', () => {
-      if (watchTime > 0) recordVideoView(video.value.id, watchTime)
-    })
+    viewSessionId = newViewSessionId()
+    // 建立观看会话（观次 +1）
+    if (video.value) recordVideoView(video.value.id, viewSessionId, 0).catch(() => {})
+    viewTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') pendingDelta += 5
+    }, 5000)
+    reportTimer = setInterval(flushWatchTime, 30000)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pagehide', reportOnLeave)
+    window.addEventListener('beforeunload', reportOnLeave)
   } finally { loading.value = false }
 })
 
 onBeforeUnmount(() => {
   if (viewTimer) clearInterval(viewTimer)
+  if (reportTimer) clearInterval(reportTimer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('pagehide', reportOnLeave)
+  window.removeEventListener('beforeunload', reportOnLeave)
+  flushWatchTime()
 })
 </script>
 

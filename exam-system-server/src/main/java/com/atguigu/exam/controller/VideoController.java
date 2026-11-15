@@ -97,12 +97,13 @@ public class VideoController {
      * @return 操作结果
      */
     @PostMapping("/{videoId}/view")
-    @Operation(summary = "记录视频观看", description = "记录用户观看视频的行为和时长")
+    @Operation(summary = "记录视频观看", description = "会话化观看上报：首次上报（新会话ID）计一次观看，同会话心跳只累加时长；离开页面时可用 sendBeacon 兜底上报")
     public Result<Void> recordVideoView(
             @Parameter(description = "视频ID") @PathVariable Long videoId,
-            @Parameter(description = "观看时长（秒）") @RequestParam Integer viewDuration,
+            @Parameter(description = "观看会话ID，前端进入详情页生成并复用") @RequestParam(required = false) String sessionId,
+            @Parameter(description = "本次观看时长增量（秒）") @RequestParam(required = false, defaultValue = "0") Integer viewDuration,
             HttpServletRequest request) {
-        videoService.recordVideoView(videoId, viewDuration, request);
+        videoService.recordVideoView(videoId, sessionId, viewDuration, request);
         return Result.success(null);
     }
 

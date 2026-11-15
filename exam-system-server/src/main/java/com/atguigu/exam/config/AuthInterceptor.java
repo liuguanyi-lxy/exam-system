@@ -102,6 +102,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (uri.equals("/api/stats/test")) return true;
         // 静态文件
         if (uri.startsWith("/files")) return true;
+        // 视频观看上报：统计性写操作公开放行（记录IP与UA）；
+        // 离开页面时的 sendBeacon 兜底无法携带认证头，且前端心跳依赖游客也可上报
+        if (uri.matches("^/api/videos/\\d+/view$")) return true;
 
         // 仅 GET 公开的数据浏览接口
         if ("GET".equalsIgnoreCase(method)) {

@@ -50,12 +50,14 @@ public interface VideoService {
     List<Video> getLatestVideos(Integer limit);
     
     /**
-     * 记录视频观看
+     * 记录视频观看（会话化上报）
+     * 首次上报（新会话ID）插入观看记录并累加观看次数；同会话后续心跳只累加时长，观次不重复计
      * @param videoId 视频ID
-     * @param viewDuration 观看时长（秒）
+     * @param sessionId 观看会话ID（前端进入详情页生成，整个观看过程复用）
+     * @param viewDuration 本次上报的观看时长增量（秒）
      * @param request HTTP请求（用于获取用户IP）
      */
-    void recordVideoView(Long videoId, Integer viewDuration, HttpServletRequest request);
+    void recordVideoView(Long videoId, String sessionId, Integer viewDuration, HttpServletRequest request);
     
     /**
      * 切换视频点赞状态

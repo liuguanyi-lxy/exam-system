@@ -25,7 +25,10 @@ public class VideoView {
     
     @Schema(description = "视频ID", example = "1")
     private Long videoId;
-    
+
+    @Schema(description = "观看会话ID，同会话心跳累加时长不重复计观次", example = "550e8400-e29b-41d4-a716-446655440000")
+    private String sessionId;
+
     @Schema(description = "用户IP地址", example = "192.168.1.100")
     private String userIp;
     

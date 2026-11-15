@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 考试记录Service实现类
@@ -32,21 +33,35 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
     private AnswerRecordService answerRecordService;
     @Autowired
     private ExamRecordMapper examRecordMapper;
+    @Autowired
+    @Lazy
+    private com.atguigu.exam.service.PaperService paperService;
     /**
-     * 自定义多条件分页查询获取考试记录详情，每个考试记录对象包含对应的试卷详情以及答题记录
+     * 自定义多条件分页查询考试记录列表。
+     * 列表页只需要试卷名称/总分等基础信息，批量查一次试卷表即可；
+     * 不再逐条拉取整卷题目明细与答题记录（修复原实现的 N+1：每页 20 条记录要发起 40+ 次查询）
      */
     @Override
     public void customPageGetExamRecord(Page<ExamRecord> page, LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper) {
         //先获取满足条件的考试记录列表,根据分页条件和查询条件的查询结果会封装到Page对象的records属性中
         page(page, examRecordLambdaQueryWrapper);
-        log.info("考试记录分页查询结果:{}", page.getRecords());
-        //将考试记录列表根据考试记录ID调用examService自定义方法获取考试记录详情，每个考试记录对象包含对应的试卷详情以及答题记录
-        List<ExamRecord> examRecordList = page.getRecords().stream()
-                .map(examRecord -> examService.customGetExamRecordById(examRecord.getId().intValue()))
-                .filter(examRecord -> examRecord != null)
+        List<ExamRecord> records = page.getRecords();
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        //按本页记录涉及的试卷ID批量取试卷基础信息（不含题目明细），挂到记录的 paper 字段供列表展示
+        List<Long> paperIds = records.stream()
+                .map(r -> r.getExamId() == null ? null : r.getExamId().longValue())
+                .filter(java.util.Objects::nonNull)
+                .distinct()
                 .toList();
-        //将考试记录详情列表封装到Page对象的records属性中
-        page.setRecords(examRecordList);
+        Map<Long, com.atguigu.exam.entity.Paper> paperMap = paperIds.isEmpty() ? Map.of()
+                : paperService.listByIds(paperIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(com.atguigu.exam.entity.Paper::getId, p -> p, (a, b) -> a));
+        for (ExamRecord record : records) {
+            record.setPaper(record.getExamId() == null ? null : paperMap.get(record.getExamId().longValue()));
+        }
+        log.info("考试记录分页查询：{} 条记录，批量关联试卷 {} 份", records.size(), paperMap.size());
     }
     /*
     * 自定义根据考试记录ID删除考试记录*/

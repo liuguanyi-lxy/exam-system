@@ -20,9 +20,9 @@ export function getLatestVideos(limit) {
   return request.get('/api/videos/latest', { params: { limit } })
 }
 
-/** POST /api/videos/{videoId}/view */
-export function recordVideoView(videoId, viewDuration) {
-  return request.post(`/api/videos/${videoId}/view`, null, { params: { viewDuration } })
+/** POST /api/videos/{videoId}/view — 会话化观看上报：首次上报计一次观看，同会话心跳累加时长 */
+export function recordVideoView(videoId, sessionId, viewDuration) {
+  return request.post(`/api/videos/${videoId}/view`, null, { params: { sessionId, viewDuration } })
 }
 
 /** POST /api/videos/{videoId}/like */

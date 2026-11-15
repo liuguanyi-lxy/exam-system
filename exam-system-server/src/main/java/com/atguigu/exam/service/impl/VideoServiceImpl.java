@@ -120,24 +120,48 @@ public class VideoServiceImpl implements VideoService {
         return videos;
     }
 
+    /** 观看心跳单次增量的上限（秒），防异常高频上报刷时长 */
+    private static final int VIEW_DELTA_CAP_SECONDS = 60;
+
+    /**
+     * 记录视频观看（会话化上报）
+     * 首次上报（新会话ID）插入观看记录并累加观看次数；同会话后续心跳只累加时长，观次不重复计。
+     * 上报接口为公开接口（离开页面时 sendBeacon 无法携带认证头），通过单次增量上限控制刷量风险
+     */
     @Override
     @Transactional
-    public void recordVideoView(Long videoId, Integer viewDuration, HttpServletRequest request) {
+    public void recordVideoView(Long videoId, String sessionId, Integer viewDuration, HttpServletRequest request) {
         if (request == null) return;
-        
+
         String userIp = IpUtils.getClientIp(request);
         String userAgent = request.getHeader("User-Agent");
-        
-        // 创建观看记录
+        int delta = (viewDuration == null || viewDuration <= 0) ? 0 : Math.min(viewDuration, VIEW_DELTA_CAP_SECONDS);
+
+        // 会话已存在 → 心跳：只累加时长，观次不变
+        if (sessionId != null && !sessionId.isBlank()) {
+            VideoView existing = videoViewMapper.selectOne(new LambdaQueryWrapper<VideoView>()
+                    .eq(VideoView::getSessionId, sessionId)
+                    .last("LIMIT 1"));
+            if (existing != null) {
+                if (delta > 0) {
+                    existing.setViewDuration((existing.getViewDuration() == null ? 0 : existing.getViewDuration()) + delta);
+                    videoViewMapper.updateById(existing);
+                }
+                return;
+            }
+        }
+
+        // 新观看会话：插入记录并累加观看次数
         VideoView videoView = new VideoView();
         videoView.setVideoId(videoId);
+        videoView.setSessionId(sessionId);
         videoView.setUserIp(userIp);
         videoView.setUserAgent(userAgent);
-        videoView.setViewDuration(viewDuration);
+        videoView.setViewDuration(delta);
         videoView.setCreatedAt(LocalDateTime.now());
-        
+
         videoViewMapper.insert(videoView);
-        
+
         // 增加视频观看次数
         videoMapper.incrementViewCount(videoId);
     }
