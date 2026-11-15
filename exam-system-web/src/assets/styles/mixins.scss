@@ -1,0 +1,69 @@
+// ============================================================
+// SCSS 混合宏 — 卡片 / 标题 / 悬停 / 动画
+// 约定：不再使用毛玻璃与渐变文字，靠"白底 + 1px 边框 + 极轻阴影"分层
+// ============================================================
+@import './variables';
+
+// 标准卡片（沿用旧名字 glass，避免大面积改引用）
+@mixin glass($blur: 16px, $opacity: 1) {
+  background: $surface;
+  border: 1px solid $border;
+  box-shadow: $shadow-sm;
+}
+
+// 深色卡片
+@mixin glass-dark($blur: 16px, $opacity: 1) {
+  background: #141c2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+// 标题文字：纯色，不再做渐变裁切
+@mixin gradient-text {
+  color: $text-primary;
+}
+
+// 卡片悬停：轻微抬起，阴影不夸张
+@mixin card-hover($lift: -2px, $glow: false) {
+  transition: transform $transition-normal, box-shadow $transition-normal,
+    border-color $transition-normal;
+  &:hover {
+    transform: translateY($lift);
+    border-color: $border-strong;
+    @if $glow {
+      box-shadow: $shadow-glow-soft;
+    } @else {
+      box-shadow: $shadow-lg;
+    }
+  }
+}
+
+// 页面路由过渡
+@mixin page-enter {
+  animation: fade-in-up $transition-normal ease-out both;
+}
+
+// 主按钮（沿用旧名字，视觉上改为纯主色）
+@mixin gradient-button {
+  background: $primary;
+  border: none;
+  color: #fff;
+  transition: background $transition-fast, box-shadow $transition-fast;
+  &:hover {
+    background: $primary-dark;
+    color: #fff;
+  }
+  &:active {
+    background: $primary-dark;
+  }
+}
+
+// 网格纹理（登录页/空状态背景用，极淡）
+@mixin dotted-bg($color: rgba(15, 23, 42, 0.06), $size: 24px) {
+  background-image: radial-gradient($color 1px, transparent 1px);
+  background-size: $size $size;
+}
+
+// 顶部彩条（已不推荐使用，保留空实现兼容老引用）
+@mixin top-accent($color1: $primary, $color2: $secondary) {
+  position: relative;
+}
