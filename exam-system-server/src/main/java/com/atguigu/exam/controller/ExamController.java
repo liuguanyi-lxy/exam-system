@@ -33,9 +33,10 @@ public class ExamController {
      * @return 考试记录
      */
     @PostMapping("/start")  // 处理POST请求
-    @Operation(summary = "开始考试", description = "学生开始考试，创建考试记录，前端再调用查询试卷详情接口才会并返回试卷内容")  // API描述
-    public Result<ExamRecord> startExam(@RequestBody StartExamVo startExamVo) {
-        ExamRecord examRecord =  examService.startExam(startExamVo);
+    @Operation(summary = "开始考试", description = "学生开始考试，创建考试记录（归属当前登录用户），前端再调用查询试卷详情接口才会并返回试卷内容")  // API描述
+    public Result<ExamRecord> startExam(@RequestBody StartExamVo startExamVo,
+            @RequestAttribute("userId") Long userId) {
+        ExamRecord examRecord =  examService.startExam(startExamVo, userId);
         log.info("开始考试，考试对象创建成功！{}",examRecord);
         return Result.success(examRecord, "考试开始成功");
     }
@@ -47,11 +48,13 @@ public class ExamController {
      * @param answers      答题列表，前端会记录学生答题的数据，然后序列化后用SubmitAnswerVo对象接收
      */
     @PostMapping("/{examRecordId}/submit")  // 处理POST请求
-    @Operation(summary = "提交考试答案", description = "学生提交考试答案，系统记录答题情况并结束考试；AI判卷由结果页调用 /grade 接口触发")  // API描述
+    @Operation(summary = "提交考试答案", description = "学生提交考试答案，校验记录归属、进行中状态与考试时间后结束考试；AI判卷由结果页调用 /grade 接口触发")  // API描述
     public Result<Void> submitAnswers(
             @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId,
-            @RequestBody List<SubmitAnswerVo> answers) {
-            examService.customSubmitAnswer(examRecordId,answers);
+            @RequestBody List<SubmitAnswerVo> answers,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute("userRole") String role) {
+            examService.customSubmitAnswer(examRecordId, answers, userId, isTeacherOrAdmin(role));
             log.info("提交答案接口调用成功！");
             return Result.success("答案提交成功");
     }
@@ -61,11 +64,18 @@ public class ExamController {
      * @param examRecordId 考试记录ID
      */
     @PostMapping("/{examRecordId}/grade")  // 处理POST请求
-    @Operation(summary = "AI自动批阅", description = "使用AI技术自动批阅试卷，特别是简答题的智能评分,返回批阅后的考试记录；已批阅的记录直接返回不重复判卷")  // API描述
+    @Operation(summary = "AI自动批阅", description = "使用AI技术自动批阅试卷，特别是简答题的智能评分,返回批阅后的考试记录；已批阅的记录直接返回不重复判卷；仅考生本人或教师/管理员可触发")  // API描述
     public Result<ExamRecord> gradeExam(
-            @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId) {
-             ExamRecord examRecord = examService.gradeExam(examRecordId);
+            @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute("userRole") String role) {
+             ExamRecord examRecord = examService.gradeExam(examRecordId, userId, isTeacherOrAdmin(role));
              return Result.success(examRecord, "试卷批阅完成");
+    }
+
+    /** 当前请求角色是否教师/管理员 */
+    private boolean isTeacherOrAdmin(String role) {
+        return "ADMIN".equals(role) || "TEACHER".equals(role);
     }
 
 } 

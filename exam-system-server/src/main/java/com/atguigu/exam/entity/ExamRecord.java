@@ -17,9 +17,13 @@ import java.util.List;
 @Schema(description = "考试记录信息")
 public class ExamRecord extends BaseEntity {
 
-    @Schema(description = "试卷ID，关联的考试试卷", 
+    @Schema(description = "试卷ID，关联的考试试卷",
             example = "1")
     private Integer examId; // 试卷ID
+
+    @Schema(description = "考生用户ID，关联 users 表；历史数据可能为空，空时按 student_name 弱校验",
+            example = "1")
+    private Long userId; // 考生用户ID
 
     @Schema(description = "考生姓名", 
             example = "张三")

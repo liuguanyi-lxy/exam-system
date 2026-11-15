@@ -103,10 +103,16 @@
       </template>
     </el-dialog>
   </div>
+
+  <!-- 刷新恢复中的过渡态 -->
+  <div class="exam-restoring" v-else-if="restoring">
+    <el-icon class="is-loading" :size="30"><Loading /></el-icon>
+    <p>正在恢复考试进度...</p>
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useExamStore } from '@/stores/exam'
@@ -117,12 +123,14 @@ const router = useRouter()
 const examStore = useExamStore()
 const userStore = useUserStore()
 const exam = computed(() => examStore.currentExam)
-const answers = reactive(examStore.currentExam?.answers || {})
+// 用 ref 持有答题对象：刷新恢复发生在 onMounted，恢复成功后重新指向 store 里的对象
+const answers = ref(examStore.currentExam?.answers || {})
+const restoring = ref(false)
 const showSubmitDialog = ref(false)
 const submitting = ref(false)
 const currentIndex = ref(0)
 
-const answeredCount = computed(() => Object.values(answers).filter(v => v).length)
+const answeredCount = computed(() => Object.values(answers.value).filter(v => v).length)
 const unansweredCount = computed(() => (exam.value?.paper?.questions?.length || 0) - answeredCount.value)
 
 // 选项编号按展示顺序生成（A/B/C…），不依赖后端 sort 是否从 0 开始
@@ -138,27 +146,27 @@ function typeLabel(type) {
 // 代码题里按 Tab 插入两个空格，而不是把焦点移走
 function insertIndent(e, qid) {
   const el = e.target
-  const val = answers[qid] || ''
+  const val = answers.value[qid] || ''
   const start = el.selectionStart ?? val.length
   const end = el.selectionEnd ?? start
-  answers[qid] = val.slice(0, start) + '  ' + val.slice(end)
+  answers.value[qid] = val.slice(0, start) + '  ' + val.slice(end)
   nextTick(() => {
     el.selectionStart = el.selectionEnd = start + 2
   })
 }
 
 function isChoiceSelected(q, content) {
-  const ans = answers[q.id]
+  const ans = answers.value[q.id]
   if (!ans) return false
   if (q.multi) return ans.split(',').includes(content)
   return ans === content
 }
 
 function toggleMultiChoice(q, content, checked) {
-  const current = (answers[q.id] || '').split(',').filter(Boolean)
+  const current = (answers.value[q.id] || '').split(',').filter(Boolean)
   if (checked) { current.push(content) } else { const idx = current.indexOf(content); if (idx > -1) current.splice(idx, 1) }
-  answers[q.id] = current.join(',')
-  examStore.setAnswer(q.id, answers[q.id])
+  answers.value[q.id] = current.join(',')
+  examStore.setAnswer(q.id, answers.value[q.id])
 }
 
 function formatTime(seconds) {
@@ -184,8 +192,15 @@ async function handleSubmit() {
 function onVisibilityChange() { if (document.hidden) examStore.recordWindowSwitch() }
 function onBlur() { examStore.recordWindowSwitch() }
 
-onMounted(() => {
-  if (!exam.value) { router.push('/home'); return }
+onMounted(async () => {
+  // 刷新恢复：store 里有进行中的考试则直接用，否则尝试从 sessionStorage 恢复
+  if (!exam.value) {
+    restoring.value = true
+    const ok = await examStore.tryRestore()
+    restoring.value = false
+    if (!ok) { router.push('/home'); return }
+    answers.value = examStore.currentExam.answers
+  }
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('blur', onBlur)
 })
@@ -207,6 +222,22 @@ onBeforeUnmount(() => {
   z-index: 1000;
   display: flex;
   flex-direction: column;
+}
+
+// 刷新恢复过渡态
+.exam-restoring {
+  position: fixed;
+  inset: 0;
+  background: $gradient-bg;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: $text-secondary;
+  font-size: 14px;
+  p { margin: 0; }
 }
 
 // 顶部栏

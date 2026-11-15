@@ -48,19 +48,27 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     @Autowired
     private AiService aiService;
     @Autowired
+    private UserService userService;
+    @Autowired
     @Qualifier("examExecutor")
     private ThreadPoolExecutor examExecutor;
+
+    /** 交卷时间宽限秒数：覆盖前端自动交卷与网络延迟带来的少量超时 */
+    private static final long SUBMIT_GRACE_SECONDS = 60;
+
     /**
      * 开始考试业务
-     * @param startExamVo
+     * @param startExamVo 开考参数
+     * @param currentUserId 当前登录用户ID，考试记录归属
      * @return
      */
     @Override
-    public ExamRecord startExam(StartExamVo startExamVo) {
+    public ExamRecord startExam(StartExamVo startExamVo, Long currentUserId) {
         //创建一个考试记录对象并存储到数据库中
         //1.校验该学生是否有相同试卷ID的考试正在进行，存在则查询对应的试卷对象赋值给考试记录对象的属性然后直接返回
+        //按 userId 维度查重：同一账号对同一试卷只有一条进行中的考试（studentName 仅作展示冗余）
         LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
-        examRecordLambdaQueryWrapper.eq(ExamRecord::getStudentName, startExamVo.getStudentName());
+        examRecordLambdaQueryWrapper.eq(ExamRecord::getUserId, currentUserId);
         examRecordLambdaQueryWrapper.eq(ExamRecord::getExamId, startExamVo.getPaperId());
         examRecordLambdaQueryWrapper.eq(ExamRecord::getStatus, ExamStatus.IN_PROGRESS);
         //getOne传入false：存在多条进行中记录时取第一条而不是抛异常，避免历史脏数据导致无法开考
@@ -71,6 +79,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         }
         //2.不存在则创建新的考试记录对象并存储到数据库中
         ExamRecord record = new ExamRecord();
+        record.setUserId(currentUserId);
         record.setStudentName(startExamVo.getStudentName());
         record.setExamId(startExamVo.getPaperId());
         record.setStatus(ExamStatus.IN_PROGRESS);
@@ -128,16 +137,32 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     }
     /**
      * 提交考试答案
-     * 只负责保存答题记录并结束考试，判卷由结果页调用 /grade 接口触发，
+     * 校验：记录存在、归属当前用户、状态为进行中、考试时间未超时（含宽限），
+     * 全部通过后才保存答题记录并结束考试；判卷由结果页调用 /grade 接口触发，
      * 避免交卷请求同步等待AI判卷导致前端30秒超时
      * @param examRecordId
      * @param answers
+     * @param currentUserId 当前登录用户ID，校验记录归属
+     * @param isTeacherOrAdmin 当前用户是否教师/管理员
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void customSubmitAnswer(Integer examRecordId, List<SubmitAnswerVo> answers) {
+    public void customSubmitAnswer(Integer examRecordId, List<SubmitAnswerVo> answers, Long currentUserId, boolean isTeacherOrAdmin) {
         //将答题记录保存在试卷记录和题目的关联表，也就答题记录表，记录考试记录的ID、题目ID、学生答案。然后再修改考试记录的考试状态和结束时间
-        //1.将前端传入的提交答案列表保存到答题记录表
+        //1.先取出考试记录完成校验：存在性、归属、状态、时间，全部通过后才写答题记录，避免半提交脏数据
+        ExamRecord examRecord = getById(examRecordId);
+        if (examRecord == null) {
+            throw new RuntimeException("ID为%s的考试记录不存在，提交失败！".formatted(examRecordId));
+        }
+        checkRecordOwner(examRecord, currentUserId, isTeacherOrAdmin);
+        //已交卷/已批阅的记录拒绝重复提交，防止重复插入答题记录
+        if (!ExamStatus.IN_PROGRESS.equals(examRecord.getStatus())) {
+            throw new RuntimeException("该考试已交卷，请勿重复提交！");
+        }
+        //服务端时间校验：超过试卷时长+宽限仍未交卷则拒绝，防止无限延时答题
+        checkSubmitDeadline(examRecord);
+
+        //2.将前端传入的提交答案列表保存到答题记录表
         //首先要对提交答案列表进行判空,提交答案列表为空就不用保存答题记录
         if(ObjectUtils.isNotEmpty(answers))
         {
@@ -149,15 +174,55 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
             answerRecordService.saveBatch(answerRecordList);
         }
 
-        //2.修改考试记录的考试状态和结束时间
-        ExamRecord examRecord = getById(examRecordId);
-        if (examRecord == null) {
-            throw new RuntimeException("ID为%s的考试记录不存在，提交失败！".formatted(examRecordId));
-        }
+        //3.修改考试记录的考试状态和结束时间
         examRecord.setStatus(ExamStatus.FINISHED);
         examRecord.setEndTime(LocalDateTime.now());
         //更新对应的考试记录数据
         this.updateById(examRecord);
+    }
+
+    /**
+     * 校验考试记录归属：优先比对 user_id；历史记录 user_id 为空时退化为 student_name 与当前用户姓名比对
+     * 教师/管理员放行（管理端代操作场景）
+     */
+    private void checkRecordOwner(ExamRecord examRecord, Long currentUserId, boolean isTeacherOrAdmin) {
+        if (isTeacherOrAdmin) {
+            return;
+        }
+        if (examRecord.getUserId() != null) {
+            if (!examRecord.getUserId().equals(currentUserId)) {
+                log.warn("用户{}尝试操作不属于自己的考试记录{}", currentUserId, examRecord.getId());
+                throw new RuntimeException("无权操作该考试记录！");
+            }
+            return;
+        }
+        //历史数据兜底：user_id 为空的旧记录按姓名弱校验
+        User user = userService.getById(currentUserId);
+        if (user == null || !examRecord.getStudentName().equals(user.getRealName())) {
+            throw new RuntimeException("无权操作该考试记录！");
+        }
+    }
+
+    /**
+     * 服务端交卷时间校验：开始时间 + 试卷时长 + 宽限秒数 之后不允许再交卷
+     * 试卷时长缺失或试卷已删除时跳过校验，不阻塞交卷
+     */
+    private void checkSubmitDeadline(ExamRecord examRecord) {
+        if (examRecord.getStartTime() == null || examRecord.getExamId() == null) {
+            return;
+        }
+        Paper paper = paperService.getById(examRecord.getExamId().longValue());
+        if (paper == null || paper.getDuration() == null || paper.getDuration() <= 0) {
+            return;
+        }
+        LocalDateTime deadline = examRecord.getStartTime()
+                .plusMinutes(paper.getDuration())
+                .plusSeconds(SUBMIT_GRACE_SECONDS);
+        if (LocalDateTime.now().isAfter(deadline)) {
+            log.warn("考试记录{}超时提交被拒绝：截止{}，当前{}",
+                    examRecord.getId(), deadline, LocalDateTime.now());
+            throw new RuntimeException("考试时间已结束，无法提交答卷！");
+        }
     }
     /**
      * ai试卷批阅功能
@@ -167,19 +232,20 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
      * @return
      */
     @Override
-    public ExamRecord gradeExam(Integer examRecordId) {
+    public ExamRecord gradeExam(Integer examRecordId, Long currentUserId, boolean isTeacherOrAdmin) {
         //1.获取考试记录对象，包含其关联的试卷信息和答题记录信息
         ExamRecord examRecord = customGetExamRecordById(examRecordId);
         if (examRecord == null) {
             throw new RuntimeException("ID为%s的考试记录不存在，无法判卷".formatted(examRecordId));
         }
+        //归属校验：仅考生本人或教师/管理员可触发判卷，防止他人消耗AI调用
+        checkRecordOwner(examRecord, currentUserId, isTeacherOrAdmin);
         //已批阅过的记录直接返回：结果页刷新时不会重复消耗AI调用
         if (ExamStatus.GRADED.equals(examRecord.getStatus())) {
             return examRecord;
         }
         //获取考试记录关联的试卷信息，进行判空，如果为空就是考试对应的试卷已经被删除，无法进行成绩判定
         Paper paper = examRecord.getPaper();
-        log.info("开始判卷，考试记录ID：{}，试卷ID：{}", examRecordId, paper.getId());
         if(paper == null){
             //试卷为空则给考试记录状态修改成已批阅
             examRecord.setStatus(ExamStatus.GRADED);
@@ -187,8 +253,10 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
             examRecord.setSummary("考试对应的试卷已被删除，无法进行成绩判定");
             //更新考试记录
             this.updateById(examRecord);
+            log.warn("考试记录{}关联的试卷{}已被删除，无法判卷", examRecordId, examRecord.getExamId());
             throw new RuntimeException("考试对应的试卷已被删除，无法进行成绩判定");
         }
+        log.info("开始判卷，考试记录ID：{}，试卷ID：{}", examRecordId, paper.getId());
         //2.获取考试记录关联的答题记录信息，进行判空，如果为空就是考生分数为0
         List<AnswerRecord> answerRecordList = examRecord.getAnswerRecords();
         if(ObjectUtils.isEmpty(answerRecordList)){

@@ -36,11 +36,14 @@ public class ExamRecordController {
     private ExamRecordService examRecordService;
     @Autowired
     private PaperService paperService;
+    @Autowired
+    private com.atguigu.exam.service.UserService userService;
     /**
      * 分页查询考试记录
+     * 学生角色强制只返回自己的记录；教师/管理员可看全部
      */
     @GetMapping("/list")  // 处理GET请求
-    @Operation(summary = "分页查询考试记录", description = "支持多条件筛选的考试记录分页查询，包括按试卷、姓名、状态、时间范围等筛选")  // API描述
+    @Operation(summary = "分页查询考试记录", description = "支持多条件筛选的考试记录分页查询；学生只能查询自己的记录，教师/管理员可查询全部")  // API描述
     public Result<Page<ExamRecord>> getExamRecords(
             @Parameter(description = "当前页码，从1开始", example = "1") @RequestParam(defaultValue = "1") Integer page,
             @Parameter(description = "每页显示数量", example = "20") @RequestParam(defaultValue = "20") Integer size,
@@ -49,8 +52,10 @@ public class ExamRecordController {
             @Parameter(description = "学号筛选条件") @RequestParam(required = false) String studentNumber,
             @Parameter(description = "考试状态，0-进行中，1-已完成，2-已批阅") @RequestParam(required = false) Integer status,
             @Parameter(description = "开始日期，格式：yyyy-MM-dd") @RequestParam(required = false) String startDate,
-            @Parameter(description = "结束日期，格式：yyyy-MM-dd") @RequestParam(required = false) String endDate
+            @Parameter(description = "结束日期，格式：yyyy-MM-dd") @RequestParam(required = false) String endDate,
+            jakarta.servlet.http.HttpServletRequest request
     ) {
+        boolean teacherOrAdmin = isTeacherOrAdmin(request);
         //分页查询的Page对象,根据传入的参数指定当前页和每页显示数量
         Page<ExamRecord> examRecordPage = new Page<>(page, size);
         // 添加分页查询的条件
@@ -58,6 +63,11 @@ public class ExamRecordController {
         //按试卷筛选：试卷列表页点「考生成绩」进来时需要
         examRecordLambdaQueryWrapper.eq(paperId != null, ExamRecord::getExamId, paperId);
         examRecordLambdaQueryWrapper.like(studentName != null, ExamRecord::getStudentName, studentName);
+        //学生角色后端强制按本人 userId 过滤，前端传什么筛选条件都只看得到自己的记录
+        Long currentUserId = (Long) request.getAttribute("userId");
+        if (!teacherOrAdmin) {
+            examRecordLambdaQueryWrapper.eq(ExamRecord::getUserId, currentUserId);
+        }
         // 将状态码转换为状态字符串
         if (status != null) {
             String statusStr = switch (status) {
@@ -72,6 +82,14 @@ public class ExamRecordController {
         //按照考试开始时间降序排列,后面的考试记录先显示
         examRecordLambdaQueryWrapper.orderByDesc(ExamRecord::getCreateTime);
         examRecordService.customPageGetExamRecord(examRecordPage, examRecordLambdaQueryWrapper);
+        //学生视角下，未批阅记录的答案/解析不随列表下发（与详情接口的脱敏规则一致）
+        if (!teacherOrAdmin && examRecordPage.getRecords() != null) {
+            examRecordPage.getRecords().forEach(r -> {
+                if (!ExamStatus.GRADED.equals(r.getStatus()) && r.getPaper() != null) {
+                    QuestionSanitizer.stripAnswer(r.getPaper().getQuestions());
+                }
+            });
+        }
         log.info("查询考试记录列表：paperId={}，当前页 {} 条，共 {} 条", paperId,
                 examRecordPage.getRecords() == null ? 0 : examRecordPage.getRecords().size(), examRecordPage.getTotal());
         return Result.success(examRecordPage);
@@ -132,19 +150,46 @@ public class ExamRecordController {
      * 根据ID获取考试记录详情
      */
     @GetMapping("/{id}")  // 处理GET请求
-    @Operation(summary = "获取考试记录详情", description = "根据记录ID获取考试记录的详细信息，包括试卷内容和答题情况")  // API描述
+    @Operation(summary = "获取考试记录详情", description = "根据记录ID获取考试记录的详细信息；学生只能查看自己的记录，未批阅记录对学生脱敏")  // API描述
     public Result<ExamRecord> getExamRecordById(
             @Parameter(description = "考试记录ID") @PathVariable Integer id,
             jakarta.servlet.http.HttpServletRequest request) {
         ExamRecord examRecord = examService.customGetExamRecordById(id);
+        if (examRecord == null) {
+            return Result.error("考试记录不存在");
+        }
+        boolean teacherOrAdmin = isTeacherOrAdmin(request);
+        //归属校验：学生只能查看自己的考试记录
+        if (!teacherOrAdmin) {
+            checkRecordOwner(examRecord, request);
+        }
         // 成绩出来之前（进行中/已交卷未批阅）不能让学生从记录详情里看到答案和解析；
         // 批阅之后结果页需要展示逐题解析与整体评价，完整返回
         boolean graded = ExamStatus.GRADED.equals(examRecord.getStatus());
-        if (!graded && !isTeacherOrAdmin(request) && examRecord.getPaper() != null) {
+        if (!graded && !teacherOrAdmin && examRecord.getPaper() != null) {
             QuestionSanitizer.stripAnswer(examRecord.getPaper().getQuestions());
         }
         log.info("查询考试记录详情成功，记录ID：{}，状态：{}", id, examRecord.getStatus());
         return Result.success(examRecord);
+    }
+
+    /**
+     * 考试记录归属校验：优先比对 user_id；
+     * 历史记录 user_id 为空时退化为 student_name 与当前用户姓名比对
+     */
+    private void checkRecordOwner(ExamRecord examRecord, jakarta.servlet.http.HttpServletRequest request) {
+        Long currentUserId = (Long) request.getAttribute("userId");
+        if (examRecord.getUserId() != null) {
+            if (!examRecord.getUserId().equals(currentUserId)) {
+                log.warn("用户{}尝试查看不属于自己的考试记录{}", currentUserId, examRecord.getId());
+                throw new RuntimeException("无权查看该考试记录！");
+            }
+            return;
+        }
+        com.atguigu.exam.entity.User user = userService.getById(currentUserId);
+        if (user == null || !examRecord.getStudentName().equals(user.getRealName())) {
+            throw new RuntimeException("无权查看该考试记录！");
+        }
     }
 
     /** 当前请求是否来自教师/管理员 */
@@ -158,12 +203,19 @@ public class ExamRecordController {
      * 删除考试记录
      */
     @DeleteMapping("/{id}")  // 处理DELETE请求
-    @Operation(summary = "删除考试记录", description = "根据ID删除指定的考试记录")  // API描述
+    @Operation(summary = "删除考试记录", description = "根据ID删除指定的考试记录；学生只能删除自己的记录，教师/管理员可删除全部")  // API描述
     public Result<Void> deleteExamRecord(
-            @Parameter(description = "考试记录ID") @PathVariable Integer id) {
+            @Parameter(description = "考试记录ID") @PathVariable Integer id,
+            jakarta.servlet.http.HttpServletRequest request) {
+            if (!isTeacherOrAdmin(request)) {
+                ExamRecord examRecord = examService.customGetExamRecordById(id);
+                if (examRecord != null) {
+                    checkRecordOwner(examRecord, request);
+                }
+            }
             examRecordService.customRemoveById(id);
             log.info("删除考试记录成功！id:{}",id);
-            return Result.success("删除考试记录成功！id:{}");
+            return Result.success("删除考试记录成功！id:" + id);
     }
 
     /**
