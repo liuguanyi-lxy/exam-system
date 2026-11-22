@@ -3,6 +3,7 @@ package com.atguigu.exam.service.impl;
 import com.atguigu.exam.entity.User;
 import com.atguigu.exam.mapper.UserMapper;
 import com.atguigu.exam.service.UserService;
+import com.atguigu.exam.utils.RedisUtils;
 import com.atguigu.exam.utils.TokenUtil;
 import com.atguigu.exam.vo.LoginResponseVo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -18,19 +19,42 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
+    private static final int MAX_LOGIN_FAILURES = 5;
+    private static final long LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60L;
+    private static final String ACCOUNT_FAILURE_PREFIX = "auth:login:fail:account:";
+    private static final String IP_FAILURE_PREFIX = "auth:login:fail:ip:";
+
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    @Autowired
+    private RedisUtils redisUtils;
 
     @Autowired
     private TokenUtil tokenUtil;
 
     @Override
     public LoginResponseVo login(String username, String password) {
+        return login(username, password, "unknown");
+    }
+
+    @Override
+    public LoginResponseVo login(String username, String password, String clientIp) {
+        String normalizedUsername = username == null ? "" : username.trim().toLowerCase();
+        String normalizedIp = clientIp == null || clientIp.isBlank() ? "unknown" : clientIp;
+        String accountKey = ACCOUNT_FAILURE_PREFIX + normalizedUsername;
+        String ipKey = IP_FAILURE_PREFIX + normalizedIp;
+
+        if (isBlocked(accountKey) || isBlocked(ipKey)) {
+            throw new RuntimeException("登录失败次数过多，请 15 分钟后再试");
+        }
+
         // 1. 根据用户名查询用户
         User user = baseMapper.selectOne(
                 new LambdaQueryWrapper<User>().eq(User::getUsername, username));
 
         // 2. 用户不存在或密码不匹配，统一提示，避免泄露账号是否存在
         if (user == null || !passwordEncoder.matches(password, user.getPassword())) {
+            recordLoginFailure(accountKey, ipKey);
             throw new RuntimeException("用户名或密码错误");
         }
 
@@ -39,6 +63,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new RuntimeException("账号已被禁用，请联系管理员");
         }
 
+        redisUtils.delete(accountKey);
         // 4. 构造登录响应（token 使用 JWT 签名令牌）
         LoginResponseVo vo = new LoginResponseVo();
         vo.setUserId(user.getId());
@@ -47,6 +72,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         vo.setRole(user.getRole());
         vo.setToken(tokenUtil.generateToken(user.getId(), user.getUsername(), user.getRole()));
         return vo;
+    }
+
+    private boolean isBlocked(String key) {
+        Object value = redisUtils.get(key);
+        return value != null && Long.parseLong(value.toString()) >= MAX_LOGIN_FAILURES;
+    }
+
+    private void recordLoginFailure(String accountKey, String ipKey) {
+        redisUtils.increment(accountKey, LOGIN_FAILURE_WINDOW_SECONDS);
+        redisUtils.increment(ipKey, LOGIN_FAILURE_WINDOW_SECONDS);
     }
 
     @Override

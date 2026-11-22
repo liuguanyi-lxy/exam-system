@@ -50,6 +50,17 @@ public class RedisUtils {
     }
 
     /**
+     * 原子递增计数，并在首次创建时设置过期时间。
+     */
+    public Long increment(String key, long timeoutSeconds) {
+        Long value = redisTemplate.opsForValue().increment(key);
+        if (value != null && value == 1L) {
+            redisTemplate.expire(key, timeoutSeconds, TimeUnit.SECONDS);
+        }
+        return value;
+    }
+
+    /**
      * 删除缓存
      * @param key 缓存键
      */

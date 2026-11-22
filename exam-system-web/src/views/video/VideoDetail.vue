@@ -3,14 +3,21 @@
     <div v-if="video">
       <!-- 播放器区域 -->
       <div class="player-wrap">
-        <!-- 外链视频：B 站 / YouTube 内嵌播放 -->
+        <!-- YouTube 支持内嵌；B 站等国内平台直接跳转原视频页 -->
         <iframe v-if="external?.embed" :src="external.embed" class="video-iframe" scrolling="no"
-          frameborder="no" allowfullscreen referrerpolicy="no-referrer"></iframe>
+          frameborder="no" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"
+          :title="`${video.title} 外链播放器`"></iframe>
+        <div v-if="external?.embed" class="embed-fallback">
+          <span>如果播放器提示错误，可前往原视频页面观看</span>
+          <el-button link type="primary" @click="openExternal">打开原视频</el-button>
+        </div>
         <!-- 外链视频：无法内嵌的平台，提供跳转 -->
         <div v-else-if="external" class="player-fallback external-fallback">
           <el-icon :size="56" class="fallback-icon"><Link /></el-icon>
-          <p class="fallback-title">该视频来自第三方平台</p>
-          <el-button type="primary" round class="external-btn" @click="openExternal">前往观看</el-button>
+          <p class="fallback-title">该视频来自{{ external.platform }}</p>
+          <el-button type="primary" round class="external-btn" @click="openExternal">
+            前往{{ external.platform }}观看
+          </el-button>
           <p class="fallback-sub">{{ video.fileUrl }}</p>
         </div>
         <!-- 站内视频 -->
@@ -78,13 +85,13 @@ const external = computed(() => {
   const url = video.value.fileUrl || ''
   const bv = url.match(/BV[0-9A-Za-z]{10}/)?.[0]
   if (bv && /bilibili\.com|b23\.tv/.test(url)) {
-    return { kind: 'bilibili', embed: `https://player.bilibili.com/player.html?bvid=${bv}&high_quality=1&danmaku=0&autoplay=0&allowfullscreen=true` }
+    return { kind: 'bilibili', platform: 'B站', embed: null }
   }
   const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([0-9A-Za-z_-]{11})/)?.[1]
   if (yt) {
-    return { kind: 'youtube', embed: `https://www.youtube.com/embed/${yt}` }
+    return { kind: 'youtube', platform: 'YouTube', embed: `https://www.youtube.com/embed/${yt}` }
   }
-  return { kind: 'other', embed: null }
+  return { kind: 'other', platform: '外部平台', embed: null }
 })
 
 function openExternal() {
@@ -185,6 +192,16 @@ onBeforeUnmount(() => {
     max-height: 480px;
     display: block;
     border: none;
+  }
+  .embed-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.35);
   }
   .external-fallback {
     gap: 12px;

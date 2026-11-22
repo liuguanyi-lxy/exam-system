@@ -16,6 +16,11 @@ public interface UserService extends IService<User> {
     LoginResponseVo login(String username, String password);
 
     /**
+     * 登录并按来源地址执行失败次数限制。
+     */
+    LoginResponseVo login(String username, String password, String clientIp);
+
+    /**
      * 检查用户是否具有管理员权限（ADMIN 或 TEACHER）
      */
     boolean checkAdmin(Long userId);

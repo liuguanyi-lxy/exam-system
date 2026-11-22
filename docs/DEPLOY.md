@@ -22,6 +22,8 @@
    - `2026-11-15_exam_records_user_id.sql` —— 考试记录归属 user_id（含历史数据回填）
    - `2026-11-15_videos_source_type.sql` —— 视频外部链接来源
    - `2026-11-15_video_views_session.sql` —— 视频观看会话化统计
+   - `2026-11-15_wrong_questions_favorites.sql` —— 错题本与题目收藏所需表和索引
+   - `2026-11-16_learning_external_videos.sql` —— 学习类外链视频种子数据（可选，开发演示使用）
 
 ## 3. 后端部署
 
@@ -86,10 +88,10 @@ server {
 
 ## 5. 上线检查清单
 
-- [ ] `JWT_SECRET` 已改为强随机值
+- [ ] `JWT_SECRET` 已配置为至少 32 个字符的强随机值（未配置将拒绝启动）
 - [ ] `KNIFE4J_PRODUCTION=true`
 - [ ] AI key 通过环境变量或 local 配置注入，未出现在任何提交里
-- [ ] 四个 SQL 增量脚本已按顺序执行
+- [ ] 五个必需 SQL 增量脚本已按顺序执行；学习类外链视频脚本按需执行
 - [ ] MinIO 桶可写（首次上传会自动建桶并设置公共读）
 - [ ] 视频外链功能上线前确认目标平台（B 站 / YouTube）的内嵌播放未被网络策略拦截
 - [ ] AI 判卷依赖外部服务，评分结果仅供学习参考，成绩复核需人工确认

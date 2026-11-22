@@ -25,8 +25,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -163,15 +165,30 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         //服务端时间校验：超过试卷时长+宽限仍未交卷则拒绝，防止无限延时答题
         checkSubmitDeadline(examRecord);
 
-        //2.将前端传入的提交答案列表保存到答题记录表
+        //2.校验提交的题目全部属于本次考试试卷，并按题目ID去重后保存答题记录
+        //安全边界（H1）：旧实现不校验 questionId 归属，任意题库题都能落库；判卷 catch 分支再把
+        //"题目不在试卷中"写成 is_correct=0，错题本据此聚合并下发答案解析，构成答案泄露通道。
         //首先要对提交答案列表进行判空,提交答案列表为空就不用保存答题记录
         if(ObjectUtils.isNotEmpty(answers))
         {
-            //将传入的提交答案列表映射成答题记录列表
-            List<AnswerRecord> answerRecordList = answers.stream().map(answer ->
-                //将流中的每个元素拿出来进行映射成新的东西，也就是答题记录对象
-                new AnswerRecord(examRecordId, answer.getQuestionId(), answer.getUserAnswer())
-            ).collect(Collectors.toList());
+            Set<Long> paperQuestionIds = paperQuestionService.list(
+                            new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, examRecord.getExamId()))
+                    .stream()
+                    .map(PaperQuestion::getQuestionId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            //同一 questionId 只保留一条答题记录：LinkedHashMap 去重并保留首次出现顺序，后出现的答案覆盖先出现的
+            Map<Integer, String> answerByQuestionId = new LinkedHashMap<>();
+            for (SubmitAnswerVo answer : answers) {
+                if (answer == null || answer.getQuestionId() == null
+                        || !paperQuestionIds.contains(answer.getQuestionId().longValue())) {
+                    throw new RuntimeException("提交的题目不属于本次考试试卷！");
+                }
+                answerByQuestionId.put(answer.getQuestionId(), answer.getUserAnswer());
+            }
+            List<AnswerRecord> answerRecordList = answerByQuestionId.entrySet().stream()
+                    .map(entry -> new AnswerRecord(examRecordId, entry.getKey(), entry.getValue()))
+                    .collect(Collectors.toList());
             answerRecordService.saveBatch(answerRecordList);
         }
 
@@ -271,13 +288,37 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         }
         int correctNumber = 0 ; //正确题目数量
         int totalScore = 0; //总得分
+        //一次性查出本试卷的题目关联行：既用于取每题分值，也用于校验答题记录的题目归属，避免循环内逐条查库
+        List<PaperQuestion> paperQuestionList = paperQuestionService.list(
+                new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, paper.getId()));
+        Set<Long> paperQuestionIds = paperQuestionList.stream()
+                .map(PaperQuestion::getQuestionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        //安全边界（H1）：不属于本试卷的答题记录不参与判卷、不改判状态。
+        //旧漏洞会把这类记录写进 catch 分支的 is_correct=0，从而伪造错题并泄露答案解析；
+        //这里在判卷前直接过滤，判卷完成后这类记录仍是未判卷（is_correct 为空），不会进入错题本。
+        List<AnswerRecord> gradableAnswerRecords = answerRecordList.stream()
+                .filter(ar -> ar.getQuestionId() != null && paperQuestionIds.contains(ar.getQuestionId().longValue()))
+                .collect(Collectors.toList());
+        if (gradableAnswerRecords.size() != answerRecordList.size()) {
+            log.warn("考试记录{}存在{}条不属于试卷{}的答题记录，已跳过判卷",
+                    examRecordId, answerRecordList.size() - gradableAnswerRecords.size(), paper.getId());
+        }
+        if (gradableAnswerRecords.isEmpty()) {
+            //全部答题记录都不属于本试卷：按未作答处理，不产生分数与错题
+            examRecord.setStatus(ExamStatus.GRADED);
+            examRecord.setSummary("考生没有作答成绩为0");
+            this.updateById(examRecord);
+            return examRecord;
+        }
+        answerRecordList = gradableAnswerRecords;
         List<Question> paperQuestions = paper.getQuestions() == null ? new ArrayList<>() : paper.getQuestions();
         //将试卷包含的题目列表转换成题目ID对应的题目对象形式的map，方便根据题目ID取出对应的题目对象
         Map<Long, Question> questionMap = paperQuestions.stream().collect(Collectors.toMap(Question::getId, q -> q));
         log.debug("试卷题目数量：{}", questionMap == null ? 0 : questionMap.size());
-        //一次性查出本试卷每道题的分值，key为题目ID，避免在循环里逐条查库
-        Map<Long, BigDecimal> scoreMap = paperQuestionService.list(
-                        new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getPaperId, paper.getId())).stream()
+        //本试卷每道题的分值，key为题目ID（题目或分值缺失的行由判卷分支按原有异常兜底处理）
+        Map<Long, BigDecimal> scoreMap = paperQuestionList.stream()
                 .filter(pq -> pq.getQuestionId() != null && pq.getScore() != null)
                 .collect(Collectors.toMap(PaperQuestion::getQuestionId, PaperQuestion::getScore, (a, b) -> a));
         //3.收集所有需要AI判卷的题目，合并成一次批量判卷请求

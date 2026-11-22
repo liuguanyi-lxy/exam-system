@@ -38,7 +38,7 @@ export const difficultyMap = { EASY: '简单', MEDIUM: '中等', HARD: '困难' 
 export const difficultyColors = { EASY: 'success', MEDIUM: 'warning', HARD: 'danger' }
 
 /** 题目类型映射 */
-export const questionTypeMap = { CHOICE: '选择题', JUDGE: '判断题', TEXT: '简答题' }
+export const questionTypeMap = { CHOICE: '选择题', JUDGE: '判断题', TEXT: '简答题', CODE: '手写代码题' }
 
 /** 试卷/考试状态映射 */
 export const paperStatusMap = { DRAFT: '草稿', PUBLISHED: '已发布', STOPPED: '已停止' }

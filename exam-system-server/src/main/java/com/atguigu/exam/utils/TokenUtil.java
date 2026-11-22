@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import jakarta.annotation.PostConstruct;
 
 /**
  * JWT 令牌工具类
@@ -19,13 +20,23 @@ import java.util.Date;
 @Component
 public class TokenUtil {
 
-    /** 令牌签名密钥（从配置读取，默认值仅用于本地演示） */
-    @Value("${jwt.secret:exam-system-jwt-secret-key-2026-for-demo-only-please-change-in-production}")
+    /** 令牌签名密钥，必须通过私密配置或 JWT_SECRET 注入 */
+    @Value("${jwt.secret:}")
     private String secret;
 
     /** 令牌过期时间（毫秒），默认 7 天 */
     @Value("${jwt.expire:604800000}")
     private long expire;
+
+    @PostConstruct
+    void validateConfiguration() {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException("JWT_SECRET 必须配置且至少包含 32 个字符");
+        }
+        if (expire <= 0) {
+            throw new IllegalStateException("jwt.expire 必须为正数");
+        }
+    }
 
     private SecretKey getKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

@@ -78,6 +78,24 @@ const routes = [
         meta: { title: '我的考试', requiresAuth: true },
       },
       {
+        path: 'wrong-questions',
+        name: 'WrongQuestionBook',
+        component: () => import('@/views/wrong-question/WrongQuestionBook.vue'),
+        meta: { title: '错题本', requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
+        path: 'favorites',
+        name: 'MyFavorites',
+        component: () => import('@/views/favorite/MyFavorites.vue'),
+        meta: { title: '我的收藏', requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
+        path: 'questions/:id',
+        name: 'QuestionDetail',
+        component: () => import('@/views/question/QuestionDetail.vue'),
+        meta: { title: '题目详情', requiresAuth: true },
+      },
+      {
         path: 'ranking',
         name: 'ExamRanking',
         component: () => import('@/views/exam-record/ExamRanking.vue'),

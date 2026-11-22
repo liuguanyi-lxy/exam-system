@@ -10,6 +10,18 @@
         <nav class="nav-menu">
           <router-link to="/home" class="nav-item" :class="{ active: isActive('/home') }">首页</router-link>
           <router-link to="/exam/list" class="nav-item" :class="{ active: isActive('/exam/list') }">在线考试</router-link>
+          <router-link
+            v-if="userStore.isStudent"
+            to="/wrong-questions"
+            class="nav-item"
+            :class="{ active: isActive('/wrong-questions') }"
+          >错题本</router-link>
+          <router-link
+            v-if="userStore.isStudent"
+            to="/favorites"
+            class="nav-item"
+            :class="{ active: isActive('/favorites') }"
+          >我的收藏</router-link>
           <router-link to="/videos" class="nav-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
           <router-link to="/ranking" class="nav-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
         </nav>
@@ -25,6 +37,12 @@
                 <el-dropdown-menu>
                   <el-dropdown-item @click="$router.push('/exam/history')">
                     <el-icon><Notebook /></el-icon> 我的考试
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/wrong-questions')">
+                    <el-icon><Collection /></el-icon> 错题本
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/favorites')">
+                    <el-icon><Star /></el-icon> 我的收藏
                   </el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isAdmin" @click="$router.push('/admin/dashboard')">
                     <el-icon><Setting /></el-icon> 管理后台
@@ -51,6 +69,22 @@
         <div v-if="menuOpen" class="mobile-menu" @click="menuOpen = false">
           <router-link to="/home" class="mobile-item" :class="{ active: isActive('/home') }">首页</router-link>
           <router-link to="/exam/list" class="mobile-item" :class="{ active: isActive('/exam/list') }">在线考试</router-link>
+          <router-link
+            v-if="userStore.isStudent"
+            to="/wrong-questions"
+            class="mobile-item"
+            :class="{ active: isActive('/wrong-questions') }"
+          >
+            <el-icon><Collection /></el-icon> 错题本
+          </router-link>
+          <router-link
+            v-if="userStore.isStudent"
+            to="/favorites"
+            class="mobile-item"
+            :class="{ active: isActive('/favorites') }"
+          >
+            <el-icon><Star /></el-icon> 我的收藏
+          </router-link>
           <router-link to="/videos" class="mobile-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
           <router-link to="/ranking" class="mobile-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
           <div class="mobile-divider"></div>
