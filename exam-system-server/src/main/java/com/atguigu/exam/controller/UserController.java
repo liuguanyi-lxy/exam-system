@@ -7,10 +7,12 @@ import com.atguigu.exam.service.UserService;
 import com.atguigu.exam.vo.LoginRequestVo;
 import com.atguigu.exam.vo.LoginResponseVo;
 import com.atguigu.exam.vo.RegisterRequestVo;
+import com.atguigu.exam.utils.IpUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,8 +36,10 @@ public class UserController {
      */
     @PostMapping("/login")  // 处理POST请求
     @Operation(summary = "用户登录", description = "用户通过用户名和密码进行登录验证，返回用户信息和token")  // API描述
-    public Result<LoginResponseVo> login(@Valid @RequestBody LoginRequestVo loginRequestVo) {
-        LoginResponseVo vo = userService.login(loginRequestVo.getUsername(), loginRequestVo.getPassword());
+    public Result<LoginResponseVo> login(@Valid @RequestBody LoginRequestVo loginRequestVo,
+                                         HttpServletRequest request) {
+        LoginResponseVo vo = userService.login(loginRequestVo.getUsername(), loginRequestVo.getPassword(),
+                IpUtils.getClientIp(request));
         return Result.success(vo);
     }
 

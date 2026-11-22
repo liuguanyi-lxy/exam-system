@@ -5,6 +5,7 @@
 <mapper namespace="com.atguigu.exam.mapper.QuestionMapper">
     <resultMap id="detailQuestionMap" type="com.atguigu.exam.entity.Question">
         <id column="id" property="id" />
+        <result column="category_name" property="categoryName" />
         <association property="answer" javaType="com.atguigu.exam.entity.QuestionAnswer">
             <id column="qas_id" property="id" />
         </association>
@@ -14,6 +15,7 @@
     </resultMap>
     <select id="customGetById" resultMap="detailQuestionMap">
         select qs.*,
+        c.name category_name,
         qas.id qas_id,
         qas.question_id,
         qas.answer,
@@ -28,6 +30,7 @@
         qcs.create_time qcs_create_time,
         qcs.update_time qcs_update_time
         from  questions  qs
+        left join categories c on c.id = qs.category_id and c.is_deleted = 0
         left join question_answers qas  on qs.id = qas.question_id
         left join question_choices qcs  on qs.id = qcs.question_id  and qcs.is_deleted = 0
         where qs.is_deleted = 0 and qas.is_deleted = 0  and qs.id= #{questionId}
@@ -37,6 +40,7 @@
     <select id="customQueryQuestionListByPaperId" resultMap="detailQuestionMap">
         select
         qs.*,
+        c.name category_name,
         qas.id qas_id,
         qas.question_id,
         qas.answer,
@@ -53,6 +57,7 @@
         pq.score  paper_score
         from paper_question pq
         join questions qs on pq.question_id = qs.id
+        left join categories c on c.id = qs.category_id and c.is_deleted = 0
         join question_answers qas on qs.id = qas.question_id
         left join question_choices qcs on qs.id = qcs.question_id and qcs.is_deleted  = 0 where pq.is_deleted = 0 and qs.is_deleted = 0 and qas.is_deleted = 0 and pq.paper_id = #{paperId} order by qcs.sort asc ;
     </select>

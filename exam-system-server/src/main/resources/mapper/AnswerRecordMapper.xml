@@ -3,4 +3,135 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.atguigu.exam.mapper.AnswerRecordMapper">
+
+    <!--
+        错题本聚合结果映射：
+        统计字段落到 WrongQuestionVo，题目基础字段落到嵌套的 QuestionItemVo；
+        选项与标准答案由 service 按本页题目ID批量补齐，避免 N+1。
+    -->
+    <resultMap id="wrongQuestionVoMap" type="com.atguigu.exam.vo.WrongQuestionVo">
+        <id property="questionId" column="question_id"/>
+        <result property="wrongCount" column="wrong_count"/>
+        <result property="lastWrongTime" column="last_wrong_time"/>
+        <result property="lastExamRecordId" column="last_exam_record_id"/>
+        <result property="lastPaperId" column="last_paper_id"/>
+        <result property="lastPaperName" column="last_paper_name"/>
+        <result property="lastWrongAnswer" column="last_wrong_answer"/>
+        <result property="aiCorrection" column="ai_correction"/>
+        <result property="mastered" column="mastered"/>
+        <association property="question" javaType="com.atguigu.exam.vo.QuestionItemVo">
+            <id property="id" column="question_id"/>
+            <result property="title" column="title"/>
+            <result property="type" column="type"/>
+            <result property="multi" column="multi"/>
+            <result property="difficulty" column="difficulty"/>
+            <result property="categoryId" column="category_id"/>
+            <result property="categoryName" column="category_name"/>
+            <result property="analysis" column="analysis"/>
+        </association>
+    </resultMap>
+
+    <sql id="wrongQuestionColumns">
+        w.question_id,
+        w.wrong_count,
+        coalesce(ler.end_time, d.create_time) as last_wrong_time,
+        d.exam_record_id                     as last_exam_record_id,
+        ler.exam_id                          as last_paper_id,
+        p.name                               as last_paper_name,
+        d.user_answer                        as last_wrong_answer,
+        d.ai_correction,
+        qs.type,
+        qs.multi,
+        qs.difficulty,
+        qs.category_id,
+        qs.title,
+        qs.analysis,
+        c.name                               as category_name,
+        case
+            when mm.id is not null
+                and mm.mastered_time >= coalesce(ler.end_time, d.create_time)
+                then 1
+            else 0
+        end                                  as mastered
+    </sql>
+
+    <!--
+        聚合内层只产出题目ID、错误次数与"最近一次错误答题记录ID"：
+        用 GROUP_CONCAT 只拼数字ID，按错误时间倒序取第一个（id 作并列稳定破除），
+        避开答案内容含逗号的分隔符冲突；外层直接按主键回连 answer_record d，
+        同一 (exam_record_id, question_id) 存在多条历史记录时也不会放大行数（1:1，分页 total 不虚高）。
+        回连时保留 d.is_correct = 0 / d.is_deleted = 0，防止最近记录恰好是答对或已删除行时取错数据。
+        考试记录与试卷连接统一走 d.exam_record_id，保证 last_* 三元组来自同一条错误答题记录。
+    -->
+    <sql id="wrongQuestionFrom">
+        from (
+            select
+                ar.question_id,
+                count(*) as wrong_count,
+                cast(substring_index(group_concat(ar.id order by ar.create_time desc, ar.id desc), ',', 1) as signed) as last_answer_id
+            from answer_record ar
+            join exam_records er on er.id = ar.exam_record_id
+            where er.is_deleted = 0
+              and ar.is_deleted = 0
+              and er.user_id = #{userId}
+              and ar.is_correct = 0
+            group by ar.question_id
+        ) w
+        join answer_record d
+          on d.id = w.last_answer_id
+         and d.is_correct = 0
+         and d.is_deleted = 0
+        join exam_records ler
+          on ler.id = d.exam_record_id
+         and ler.is_deleted = 0
+        join questions qs
+          on qs.id = w.question_id
+         and qs.is_deleted = 0
+        left join paper p
+          on p.id = ler.exam_id
+         and p.is_deleted = 0
+        left join categories c
+          on c.id = qs.category_id
+         and c.is_deleted = 0
+        left join wrong_question_mastered mm
+          on mm.user_id = #{userId}
+         and mm.question_id = w.question_id
+    </sql>
+
+    <sql id="wrongQuestionFilters">
+        <if test="type != null and type != ''"> and qs.type = #{type}</if>
+        <if test="difficulty != null and difficulty != ''"> and qs.difficulty = #{difficulty}</if>
+        <if test="categoryId != null"> and qs.category_id = #{categoryId}</if>
+    </sql>
+
+    <!--
+        错题本默认视图：mm.id 为空（从未标记）或标记时间早于最近一次答错时间
+        （标记后又答错，自动回归）。includeMastered=true 时去掉该过滤，由 mastered 字段区分。
+    -->
+    <select id="selectWrongQuestionPage" resultMap="wrongQuestionVoMap">
+        select
+        <include refid="wrongQuestionColumns"/>
+        <include refid="wrongQuestionFrom"/>
+        <where>
+            <if test="includeMastered == null or includeMastered == false">
+                and (mm.id is null or mm.mastered_time &lt; coalesce(ler.end_time, d.create_time))
+            </if>
+            <include refid="wrongQuestionFilters"/>
+        </where>
+        order by last_wrong_time desc, w.question_id desc
+    </select>
+
+    <!-- 已掌握视图：标记存在且标记时间不早于最近一次答错时间 -->
+    <select id="selectMasteredQuestionPage" resultMap="wrongQuestionVoMap">
+        select
+        <include refid="wrongQuestionColumns"/>
+        <include refid="wrongQuestionFrom"/>
+        <where>
+            and mm.id is not null
+            and mm.mastered_time >= coalesce(ler.end_time, d.create_time)
+            <include refid="wrongQuestionFilters"/>
+        </where>
+        order by last_wrong_time desc, w.question_id desc
+    </select>
+
 </mapper>

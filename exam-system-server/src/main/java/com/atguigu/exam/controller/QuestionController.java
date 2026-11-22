@@ -239,8 +239,9 @@ public class QuestionController {
      * @param difficulty 限定难度，可选
      * @return 随机选择的题目列表
      */
+    @RequireRole({"TEACHER", "ADMIN"})
     @GetMapping("/random")  // 处理GET请求
-    @Operation(summary = "随机获取题目", description = "按指定条件随机抽取题目，用于智能组卷功能")  // API描述
+    @Operation(summary = "随机获取题目", description = "按指定条件随机抽取题目，用于智能组卷功能；返回完整答案解析，仅教师/管理员可调用")  // API描述
     public Result<List<Question>> getRandomQuestions(
             @Parameter(description = "需要获取的题目数量", example = "10") @RequestParam(defaultValue = "10") Integer count,
             @Parameter(description = "分类ID限制条件，可选") @RequestParam(required = false) Long categoryId,

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.atguigu.exam.mapper.QuestionFavoriteMapper">
+
+    <!--
+        收藏列表映射：
+        favoriteTime 取收藏行 create_time；题目字段落到嵌套 QuestionItemVo，
+        analysis 不查询（收藏列表不向学生下发解析），选项与答案由 service 批量补齐后脱敏。
+    -->
+    <resultMap id="favoriteVoMap" type="com.atguigu.exam.vo.QuestionFavoriteVo">
+        <id property="questionId" column="question_id"/>
+        <result property="favoriteTime" column="create_time"/>
+        <association property="question" javaType="com.atguigu.exam.vo.QuestionItemVo">
+            <id property="id" column="question_id"/>
+            <result property="title" column="title"/>
+            <result property="type" column="type"/>
+            <result property="multi" column="multi"/>
+            <result property="difficulty" column="difficulty"/>
+            <result property="categoryId" column="category_id"/>
+            <result property="categoryName" column="category_name"/>
+        </association>
+    </resultMap>
+
+    <!--
+        分页前在 SQL 里完成题型/难度/分类过滤，保证 total 与页码语义正确；
+        题目已逻辑删除时收藏行不展示（收藏标记行保留，无业务影响）。
+    -->
+    <select id="selectFavoritePage" resultMap="favoriteVoMap">
+        select
+            f.question_id,
+            f.create_time,
+            qs.title,
+            qs.type,
+            qs.multi,
+            qs.difficulty,
+            qs.category_id,
+            c.name as category_name
+        from question_favorites f
+        join questions qs
+          on qs.id = f.question_id
+         and qs.is_deleted = 0
+        left join categories c
+          on c.id = qs.category_id
+         and c.is_deleted = 0
+        where f.user_id = #{userId}
+        <if test="type != null and type != ''"> and qs.type = #{type}</if>
+        <if test="difficulty != null and difficulty != ''"> and qs.difficulty = #{difficulty}</if>
+        <if test="categoryId != null"> and qs.category_id = #{categoryId}</if>
+        order by f.create_time desc, f.id desc
+    </select>
+
+</mapper>

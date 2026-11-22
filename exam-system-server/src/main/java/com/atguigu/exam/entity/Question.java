@@ -47,6 +47,11 @@ public class Question extends BaseEntity {
     @Schema(description = "题目分类ID", 
             example = "1")
     private Long categoryId;
+
+    @Schema(description = "题目分类名称（关联 categories 查询得到，非数据库字段）", 
+            example = "Java 基础")
+    @TableField(exist = false)
+    private String categoryName;
     
     @Schema(description = "题目难度等级", 
             example = "MEDIUM", 

@@ -23,7 +23,7 @@
             <img v-if="v.coverUrl" :src="v.coverUrl" loading="lazy" />
             <span v-else class="vc-placeholder"><el-icon :size="36"><VideoPlay /></el-icon></span>
             <span class="vc-play"><el-icon :size="28"><VideoPlay /></el-icon></span>
-            <span class="vc-source" v-if="v.sourceType === 1">外链</span>
+            <span class="vc-source" v-if="v.sourceType === 1">{{ getPlatformName(v.fileUrl) }}</span>
             <span class="vc-duration" v-if="v.duration">{{ Math.floor(v.duration/60) }}:{{ (v.duration%60).toString().padStart(2,'0') }}</span>
           </div>
           <div class="vc-body">
@@ -60,6 +60,12 @@ const filterKeyword = ref('')
 const page = ref(1)
 const size = ref(12)
 const total = ref(0)
+
+function getPlatformName(url) {
+  if (/bilibili\.com|b23\.tv/i.test(url || '')) return 'B站'
+  if (/youtube\.com|youtu\.be/i.test(url || '')) return 'YouTube'
+  return '外链'
+}
 
 async function loadData() {
   loading.value = true
