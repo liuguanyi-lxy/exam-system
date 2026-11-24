@@ -1,7 +1,7 @@
 # 设计文档：M2 课程、章节与视频学习（含学习进度派生）
 
 - 日期：2026-11-23
-- 范围：四张表结构、heartbeat 完成判定与防刷、完成状态派生查询形态、教师三层权限接入点、课程-班级分配接线（配套增量脚本 `exam-system-server/sql/2026-11-23_m2_courses_progress.sql`）
+- 范围：课程与学习进度、个人学习会话、完成状态派生、教师权限和课程分配（配套 M2 课程与个人会话两份增量 SQL）
 - 约束：判卷/考试/错题本链不改；规格默认决策（`docs/specs/m2-courses-chapters-videos.md`）与契约（`docs/api-m2-courses-progress.md`，23 接口）已定项不推翻；本阶段只出方案不执行 SQL
 - 现状核对依据：`ClassScopeService`（M1 已落地四方法签名）、`CourseClass` 实体（物理删、仅 createTime）、`GlobalExceptionHandler` 的 `ClassScopeException`→HTTP 403、`VideoServiceImpl.recordVideoView`（会话化上报：delta ≤0→0、>60 截 60、同会话累加 `view_duration`、新会话插行+观次+1）、`Video` 实体（source_type/duration/status 常量）、`AuthInterceptor` 白名单（`^/api/videos/\d+/view$` 与 GET `/api/videos` 前缀公开）、`video_views.session_id` 已有 `idx_video_views_session` 索引、`BaseEntity`（id/createTime/updateTime/isDeleted @TableLogic）、M3 已建 `exam_classes`（逻辑删+复活先例，与本阶段无表冲突）
 
@@ -9,8 +9,8 @@
 
 | 决策点 | 结论 |
 | --- | --- |
-| 四张表 | `courses`/`course_chapters` 走 BaseEntity 逻辑删除；`chapter_videos` **物理删除**（唯一索引与"移除后重加同视频"冲突，对齐 M1 class_members 论证，偏离契约 11.3 字面，见第 13 节）；`learning_video_progress` **不逻辑删也不物理删**（学习历史永久保留） |
-| `learning_video_progress` 存什么 | **累计有效学习秒数 `watched_seconds`（COMPLETED 后冻结）+ 完成时间 `completed_at` + 当前活跃会话 `session_id` + 状态落点 `status`**；章节完成/课程进度一律派生计算不落表（契约决策 #2） |
+| 五张表 | `courses`/`course_chapters` 逻辑删除，`chapter_videos` 物理移除。个人进度与会话不因课程或章节删除而清除。 |
+| `learning_video_progress` 存什么 | 有效学习秒数（完成后冻结）、状态、完成时间。会话使用独立表；章节完成和课程进度派生。 |
 | 完成判定通道 | heartbeat 独立接口内部复用 `recordVideoView`，观看统计与视频中心同源；**完成判定与观看统计使用同一个清洗后的 delta**，两条链路口径永不分裂 |
 | 防刷 | 五条防线：同源 delta 清洗（≤0→0、>60→60）、空 sessionId 拒绝、服务端间隔折算（建议项）、外链确认不信任前端输入、外链墙钟下限（建议项）——见第 4 节 |
 | `chapter_videos.video_id` 必填性 | **NOT NULL 必填**：EXIST 与 EXTERNAL 两种来源最终都落到一行 `videos`，不存在"无视频的章节视频行"；完成通道由 `videos.source_type` 决定，与添加方式正交 |
@@ -37,7 +37,7 @@
 | --- | --- |
 | `watched_seconds` | 跨会话累计的有效学习秒数是完成判定的输入，也是 7.3 的展示值；不存则每次心跳无法累加 |
 | `completed_at` | 完成时间是事实记录（验收 3/4），也是未来错题本/诊断关联"学过什么"的锚点（契约 11.4） |
-| `session_id` | 外链 60 秒门槛按"当前绑定会话"校验（契约 7.5/决策 #13），必须记住活跃会话 |
+| `session_id` | 旧版保留，不用于判定；新的学习会话由 `learning_video_sessions` 按进度行隔离 |
 | `status` | 完成判定结果的落点（COMPLETED 后冻结），避免每查询都重算视频级完成 |
 
 **不存的东西**：章节完成表、课程进度百分比列、冗余计数列（契约决策 #2，聚合成本低）；`chapter_video_id` 仅作首学溯源（见 3.2 表内说明），任何判定与统计查询不依赖它。
@@ -52,18 +52,19 @@
 ### 3.1 既有表依赖（不改动）
 
 - `videos`：章节视频的内容实体。EXIST 选取校验 `status=1`（`STATUS_PUBLISHED`）且站内视频 `duration` 非空>0（决策 #19）；EXTERNAL 代建新行（见第 7 节）；观看统计复用 `view_count`/`video_views`。
-- `video_views`：观看会话表（无 user 列，公开接口语义）。heartbeat 经 `recordVideoView` 写入；外链完成确认按 `session_id` 点查（走既有 `idx_video_views_session`）。
+- `video_views`：公共观看统计，无 user 列。学习心跳可以同步更新，但不作为外链确认依据。
 - `classes`/`class_members`/`course_classes`：M1 已建。`course_classes` 本阶段首次接线（增删查，无单条分配接口），唯一索引 `uk_course_class(course_id,class_id)`、反查索引 `idx_course_class_class(class_id)` 已就位，M2 **不加任何索引**。
 - `users`：`created_by`/课程创建者姓名、8.1 学员 username/realName 展示。
 
-### 3.2 四张新表（DDL 全文见配套 SQL 脚本，此处列字段与要点）
+### 3.2 五张新表（DDL 全文见配套 SQL 脚本，此处列字段与要点）
 
 | 表 | 字段 | 约束/要点 |
 | --- | --- | --- |
 | `courses` | id、name、description、cover_url、status、created_by、create_time、update_time、is_deleted | BaseEntity 逻辑删除；`status` VARCHAR 取值 `DRAFT/PUBLISHED` 默认 DRAFT（对齐 classes 的 VARCHAR 枚举风格）；`created_by NOT NULL`（创建接口必有登录态），是教师可编辑性的**唯一依据**（契约 1 节：负责班级分配的课程可看可统计不可改）；name 不唯一（决策 #8）；**无二级索引**（论证同 M1 classes） |
 | `course_chapters` | id、course_id、title、description、sort、create_time、update_time、is_deleted | BaseEntity 逻辑删除；sort 新增自动置底（服务层 max+1）、上下移交换相邻值、删除后不重排（sort 空洞，决策 #10）；**不建 (course_id, sort) 索引**（第 10 节） |
 | `chapter_videos` | id、chapter_id、video_id、required、completion_ratio、sort、create_time | **物理删除**（2.1 论证）；`video_id NOT NULL`（两种来源都落到 videos 行）；`required TINYINT` 默认 1（决策 #11：忘配按必学算，口径保守）；`completion_ratio INT` 默认 70，仅站内视频生效（外链固定 60 秒门槛忽略本值）；唯一 `uk_chapter_video(chapter_id, video_id)` 防重复添加（6.2 不幂等，报"该视频已在本章节中"） |
-| `learning_video_progress` | id、user_id、video_id、chapter_video_id、status、watched_seconds、session_id、completed_at、create_time、update_time | **不逻辑删也不物理删**；唯一 `uk_progress_user_video(user_id, video_id)`（规格明文，重挂同视频不产生脏数据）；`status` VARCHAR `IN_PROGRESS/COMPLETED`；`watched_seconds` 累计有效学习秒数，COMPLETED 后冻结（验收 4）；`session_id VARCHAR(36)` 与 `video_views.session_id` 同源命名，**每次心跳重绑为最新会话**（决策 #13 成立的必要条件，见 4.4）；`chapter_video_id` 可空、仅首学溯源，判定/统计不依赖；`update_time` 双职责：8.1 的 lastLearnTime 数据源 + 防刷的服务端间隔基准 |
+| `learning_video_progress` | id、user_id、video_id、chapter_video_id、status、watched_seconds、completed_at、create_time、update_time | 学员和视频唯一；完成时间及进度冻结；毫秒精度 `update_time` 限制并发标签页累计。原 `session_id` 保留但不使用。 |
+| `learning_video_sessions` | id、progress_id、chapter_video_id、session_id、last_sequence、watched_seconds、last_signal_at | 每个进度和会话 ID 唯一；服务端间隔、序号去重及外链确认均以此表为准。 |
 
 ### 3.3 不建的表 / 不加的列
 
@@ -74,42 +75,18 @@
 
 ## 4. heartbeat 完成判定与防刷（本阶段核心）
 
-### 4.1 处理流程（`LearningService.heartbeat(userId, chapterVideoId, sessionId, viewDuration, request)`）
+### 4.1 处理流程
 
-1. **权限与存在性校验**：chapterVideoId 存在 → 章节 → 课程（逻辑删过滤）→ 课程 `PUBLISHED` 且 (courseId, classId) ∈ `course_classes` ∩ `getStudentClassIds(userId)`；不满足统一报"课程不存在或未开放"（学员视角不区分不存在与无权，契约 7.2）。班级集合为空 → 哨兵短路返回同文案。
-2. **输入清洗**：sessionId 必须非空（空 → `code:500 "参数错误"`，防观次虚增，见 4.2 防线 3）；`delta = recordVideoView 同款清洗`：null/≤0 → 0、>60 → `VIEW_DELTA_CAP_SECONDS`(60)。
-3. **观看统计（复用点）**：`videoService.recordVideoView(videoId, sessionId, delta, request)`——首报建会话+观次+1，同会话累加 `video_views.view_duration`，零改动。跨 service 注入调用（非自调用），其 `@Transactional` 正常生效。
-4. **进度行读写**（uk user+video 点查）：
-   - 行不存在 → 插入 `IN_PROGRESS`、`watched_seconds=0`、`session_id=当前`、`chapter_video_id=当前`（首学溯源）；
-   - 已存在且 `COMPLETED` → **到此为止**（只走了第 3 步观看统计），不动 watched_seconds/session_id/completed_at（验收 4：重看不重复计进度，观看次数仍随新会话 +1）；
-   - 已存在且 `IN_PROGRESS` → **原子累加** `UPDATE ... SET watched_seconds = watched_seconds + #{effDelta}, session_id = #{当前}`（`setSql` 防两标签页并发丢更新）；随后**条件更新**完成判定（见 5）。
-5. **完成判定（仅站内视频）**：`videos.source_type=0` 且 `watched_seconds ≥ ceil(duration × completion_ratio / 100)` → `UPDATE ... SET status='COMPLETED', completed_at=NOW() WHERE id=? AND status='IN_PROGRESS'`（条件更新：并发心跳同时达标时只有一行写入成功，另一请求 0 行更新天然幂等，completed_at 不会被改写）。外链视频不在此判定（完成走 4.3）。
-6. **响应组装**：completed（本次心跳后状态）、chapterCompleted（派生重算，5.1 形态）、chapterCompletedAfterThisVideo（本次 true 才置 true，非必学视频恒 false）。
+1. 读取章节视频和课程，验证课程已发布且关联本人所属启用班级。校验视频仍已发布，外链仍在白名单。
+2. 第 0 拍只初始化：创建 `(user_id, video_id)` 唯一进度行，再锁定该行。会话表按 `(progress_id, session_id)` 唯一，并绑定章节视频。后续心跳必须逐一递增序号；相同或旧序号不修改进度，跳号拒绝。
+3. 每拍最多记 60 秒，也不超过会话两次已接受心跳的服务端时间差。站内进度还受同一进度行时间差约束，防止多个标签页重复累计；完成后冻结累计时间及完成时间。章节完成实时派生。
+4. 公共观看量复用 `recordVideoView`，使用从进度 ID 和会话 UUID 派生的独立统计 ID；它只作统计，不能生成或修改个人进度。
 
-### 4.2 防刷五条防线
+### 4.2 外链确认与限制
 
-| # | 防线 | 语义 |
-| --- | --- | --- |
-| 1 | **同源 delta 清洗** | heartbeat 与观看统计用**同一个清洗后的 delta**（null/≤0→0、>60→60，即 `recordVideoView` 现行规则）：负数按 0 处理不累加（"拒绝"的落地形式，契约 7.4 口径），超大增量截断为 60。两条链路永不出现口径分裂 |
-| 2 | **单次上限** | 每拍最多 +60 秒（`VIEW_DELTA_CAP_SECONDS`），与视频中心一致 |
-| 3 | **空 sessionId 拒绝** | `recordVideoView` 对空 sessionId 会走"新会话"分支每次插行+观次+1；heartbeat 作为登录态接口必须前置强校验 sessionId 非空，堵住观次/会话记录虚增 |
-| 4 | **服务端间隔折算（建议项，契约未规定）** | `effDelta = min(清洗后 delta, 服务端本次与上次心跳间隔秒数, 60)`；上次心跳时间取 progress 行 `update_time`（ON UPDATE 自动维护，秒级精度）。正常 10 秒一拍不受影响；脚本连发被压回真实时间流速（每秒最多推进 1 秒）。首次心跳无上次时间按 min(delta,60) 放行。秒级精度可能把 10 秒间隔折算成 9 秒，损失 ≤1 秒，方向保守可接受。**review 可推翻**（推翻则仅保留防线 1-3） |
-| 5 | **外链确认不信任前端输入** | external-complete 请求体为空，服务端只读自己累计的 `video_views`（契约已定）；可选墙钟下限见 4.4 |
-
-### 4.3 外链"完成学习"确认（external-complete）与 recordVideoView 的复用点
-
-1. 校验 chapterVideo 存在且 `videos.source_type=1`（站内调用 → `code:500 "站内视频无需手动确认完成"`）；
-2. 本人 progress 行存在且 `session_id` 非空（无行/无会话 → `"请先打开视频后再确认完成"`）；
-3. **最低停留校验**：按绑定会话点查 `video_views`（`WHERE session_id=? AND video_id=?`，走既有 `idx_video_views_session`），`view_duration ≥ 60` 放行，否则拒绝 `"请继续观看满 60 秒后再确认完成（还差 X 秒）"`。行缺失（异常态）按拒绝处理。
-4. 条件更新置 `COMPLETED`+`completed_at`（`WHERE status='IN_PROGRESS'`）；已 COMPLETED 直接幂等返回成功。
-
-**复用点说明**：60 秒门槛的数据**全部来自 heartbeat 经 `recordVideoView` 累计的会话时长**——外链学习页每 10 秒发心跳（页面停留增量），`recordVideoView` 建会话/累加 `view_duration` 与视频中心完全一致，external-complete 只是读结果，不新增计时通道；前端不传时长（不可信输入不参与校验，契约 7.5）。
-
-### 4.4 已知边界与口径缝隙（如实记录）
-
-- **脚本化伪造心跳的残余风险**：客户端控制 sessionId 与 delta，单拍 delta=60 + 立即确认可在 1 秒内凑满外链门槛（防线 4 对"首次心跳"无约束）。可选加固：external-complete 增加墙钟下限 `NOW() - video_views.created_at ≥ 60`（同一行现成字段，零成本），把脚本攻击拉回真实 60 秒；正常用户不受影响（停留 60 秒内 duration 与墙钟同步增长）。**列为建议项，review 可推翻**。60 秒门槛定位是"确认真看了"的轻量门槛（契约决策 #13），完全防脚本需服务端会话签发，本阶段明确不做。
-- **跨会话倒计时缝隙**：契约 7.3 的 `watchedSeconds` 是跨会话累计（progress.watched_seconds），而 7.5 校验的是**当前绑定会话**时长——刷新页面后两者可能不一致（累计 ≥60 但新会话 <60），前端按 watchedSeconds 显示"可点确认"会被服务端拒绝。规避：前端倒计时用**本地会话计时**（进入视频卡片起计 + visibilitychange 暂停，与服务端口径一致），`watchedSeconds` 仅作展示；失败文案"还差 X 秒"直接展示 message。不新增 heartbeat 响应字段（严格按契约）；若 review 决定补齐，可在响应中增加 sessionSeconds（契约变更，另行拍板）。
-- 课程切回 DRAFT 后：列表/详情入口消失，正在学习页的 heartbeat 因第 1 步校验被拒（进度数据保留不清）。
+- 打开外链后开始计时；页面隐藏不累计。确认须提交当前会话 ID；后端锁定本人视频进度行，并读取对应章节视频的个人会话。满 60 秒方可标记完成；重复确认不会修改完成时间。
+- 客户端以 `sessionWatchedSeconds` 显示确认资格，刷新后新建会话，不继承此前未完成会话的停留。
+- 停留/播放信号和服务端时间只提供学习证据的时间约束，不等于防作弊或验证外站实际播放。停用班级或撤回课程后，新的读取与心跳不再授权。
 
 ## 5. 完成状态派生查询（零 N+1）
 
@@ -270,7 +247,7 @@ GROUP BY p.user_id;
 
 ## 11. 实施顺序（任务可独立验证，标注依赖）
 
-1. **执行增量 SQL**（依赖：`2026-11-21_m1_classes_knowledge.sql` 已执行、`2026-11-15` 系列 videos/video_views 增量在位）：建 4 表；先跑脚本头预检与尾验证语句。本设计阶段不执行，实现阶段统一执行；无代码依赖可先行。
+1. **仅在授权测试环境验证增量 SQL**：先核对目标库，按部署指南顺序执行课程与个人会话脚本；不要重复执行。
 2. **实体 + Mapper 四组**（依赖 1）：`Course`/`CourseChapter`（BaseEntity）+ `ChapterVideo`/`LearningVideoProgress`（物理存在不删）；独立验证 CRUD 与唯一索引兜底（重复添加章节视频撞 uk、并发心跳撞 uk 后转幂等）。
 3. **课程-班级分配接线**（依赖 2）：分配差量同步 + 4.6 回显；独立验证：分配 2 班 → 追加 1 删 1 → create_time 仅新增行变化 → 重复提交同集合零写入。
 4. **课程管理域**（依赖 2、3）：CRUD/状态切换/可见集合（哨兵防呆）/assertEditable；独立验证：教师只见"负责班级已分配 ∪ 本人创建"，无班级教师空列表绝非全量，非创建者教师改他人课程 403。
@@ -295,7 +272,7 @@ GROUP BY p.user_id;
 - [ ] 课程删除：章节逻辑删、chapter_videos 物理删、分配行清空、learning_video_progress 保留；重学同名课程不复用旧进度
 - [ ] 修改 required/completionRatio 只影响后续判定：已完成的进度与完成时间不回退；改必学→选学后章节完成条件立即放宽（派生）
 - [ ] 8.1：班级每人一行、completedChapterCount/lastLearnTime 正确、无学习记录 lastLearnTime=null；TEACHER 访问未分配班级课程 → "该课程未分配给该班级"
-- [ ] `EXPLAIN` heartbeat 点查走 `uk_progress_user_video`（const/ref）；外链确认查 video_views 走 `idx_video_views_session`
+- [ ] `EXPLAIN` 心跳锁定走 `uk_progress_user_video`；个人会话查询使用 `uk_learning_progress_session`
 - [ ] `/api/learning/**`、`/api/courses/**`、`/api/chapters/**`、`/api/chapter-videos/**` 未登录 → 401（未加入 AuthInterceptor 白名单，与 `/api/videos/**` 公开白名单区分）
 - [ ] 判卷/考试/错题本/视频中心 `/api/videos/{id}/view` 回归全绿（验收 9）
 
@@ -306,5 +283,5 @@ GROUP BY p.user_id;
 | 1 | `chapter_videos` **物理删除** | 11.3"逻辑删除"、5.4/6.4"级联逻辑删除" | `uk_chapter_video` 与"移除后重加同视频"冲突，逻辑删旧行占死唯一键；M1 已论证 `UNIQUE(...,is_deleted)` 不可行且需 5.7 兼容；纯配置行无审计价值 | 若坚持逻辑删除需引入 M3 式复活 SQL（UPDATE is_deleted=0）+ 5.7 兼容性论证，接口契约不变 |
 | 2 | 分配 PUT 用**差量同步**实现整体替换 | 4.7"删除全部现有关系后全量重建" | 终态语义等价；create_time 即首次分配时间（11.5 的 assigned_at 语义），重复提交真幂等零写入；不加 assigned_at 列 | 推翻则改回全删重建，assignedAt 变"最近分配时间"，需契约确认 |
 | 3 | 不建 `(course_id, sort)`/`(chapter_id, sort)` 索引 | 11.2/11.3"建议" | 表量级百级，uk 前缀已覆盖过滤方向，sort filesort 无感；M1 knowledge_points 同口径 | 推翻则补两条普通索引，一行 DDL |
-| 4 | progress 行**每次心跳重绑 session_id** | 7.4 仅"插入时绑定 session_id" | 决策 #13（刷新重计）成立的必要条件：不重绑则旧会话累计 ≥60 可在新会话立即确认完成，与决策 #13 矛盾 | 无成本，属契约语义的必要补全 |
-| 5 | 服务端间隔折算 + 外链墙钟下限 | 契约未规定（4.2 防线 4、4.4） | 堵"脚本高频心跳刷进度/1 秒凑满外链门槛"；零新列零新表 | 两个建议项独立可推翻，推翻后仅保留防线 1-3 与契约原口径 |
+| 4 | 本人进度下独立的学习会话 | 不重绑 progress 旧会话列，不读取公共观看统计 | 按章节视频校验会话归属、隔离用户与刷新 | 新增独立增量脚本 |
+| 5 | 进度行锁、序号去重与服务端时间上限 | 明确第 0 拍不计时间、重试不累加 | 保留并发进度和外链停留的可信边界 | MySQL 跨事务验收待进行 |

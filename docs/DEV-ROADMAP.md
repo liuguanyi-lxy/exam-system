@@ -10,12 +10,12 @@
 3. **M3 过渡策略（产品决策，待确认）**：无班级学员是否保留旧的全量考试可见性。默认方案：无班级学员保持现状，有班级学员只见分配内容。
 4. **M4 AI 诊断必须异步 + 幂等**（复用判卷幂等先例），追问限频按计划执行。
 5. **每阶段独立增量 SQL**（`sql/` 目录惯例），不一次建全 14 张表。
-6. M2 外链视频进度复用已完成的观看会话机制（`video_views.session_id` 心跳增量）。
+6. M2 外链视频由个人学习会话记录停留；公开视频观看量只作展示，不作为学完证据。
 
 ## 核心业务模型（按阶段建表）
 
 - M1：`classes`、`class_members`、`course_classes`、`knowledge_points`、`question_knowledge_points`
-- M2：`courses`、`course_chapters`、`chapter_videos`、`learning_video_progress`
+- M2：`courses`、`course_chapters`、`chapter_videos`、`learning_video_progress`、`learning_video_sessions`
 - M3：`exam_classes`（考试记录补班级/课程关联列）
 - M4：`ai_exam_reports`、`ai_question_chats`
 - M5：`remediation_tasks`、`remediation_records`

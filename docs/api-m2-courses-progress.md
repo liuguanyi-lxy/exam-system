@@ -15,7 +15,7 @@
 | 课程管理 | 教师/管理员建课程（名称、描述、封面、草稿/发布），分配班级（多选整体替换） | `courses`；分配接线 M1 的 `course_classes` |
 | 章节管理 | 课程下章节增删改、上下移排序 | `course_chapters` |
 | 章节视频 | 章节内挂视频：从视频中心选已有 video_id，或新建外链；设必学标记、完成比例、排序 | `chapter_videos`；视频实体复用 `videos`（source_type=0 站内 / 1 外链，复用 `VideoController` 既有机制） |
-| 学习进度 | 站内视频观看达标自动完成；外链学员点"完成学习"确认 + 最低停留 60 秒；重看不重复计进度 | `learning_video_progress`（user+video 唯一）；外链停留校验复用 `video_views.session_id` 心跳数据 |
+| 学习进度 | 站内视频观看达标自动完成；外链确认并满足最低停留 60 秒；重看不重复计学习进度 | `learning_video_progress`（学员+视频唯一）及 `learning_video_sessions` |
 | 我的课程 | 学员端课程列表（按班级过滤 + 个人进度百分比）、课程学习页（章节目录 + 播放 + 完成标记） | 读 `course_classes` + `class_members`（依赖 M1 `ClassScopeService`） |
 | 教师统计 | 班级课程视角的学员完成情况列表（简单列表，仪表盘是 M6） | 聚合 `learning_video_progress` + `class_members` |
 
@@ -23,7 +23,7 @@
 
 1. **完成判定走独立进度接口，不改 `/api/videos/{id}/view`**（本契约最重要的决策，理由见 7.4）。
 2. 章节完成 = 章节内 `required=true` 的必学视频全部完成；课程进度 = 已完成章节数 / 章节总数。完成状态与进度百分比均为**查询时派生计算**，不落表。
-3. 外链视频的"最低停留 60 秒"由后端基于**当前绑定观看会话**（`video_views.session_id` 心跳累计时长）校验，不虚构精确进度。
+3. 外链视频的最低停留由后端基于本人当前学习会话校验，不表示外站精确播放进度。
 
 ---
 
@@ -409,7 +409,7 @@
 
 **GET `/api/my/courses/{courseId}`**
 
-**校验：** 课程存在且 `PUBLISHED`，且已分配给本人所属班级；不满足 → `{code:500, message:"课程不存在或未开放"}`（学员视角不区分"不存在"与"无权"，避免探测未分配课程；越权与不存在同文案）。
+**校验：** 课程存在且 `PUBLISHED`，且已分配给本人所属的启用班级；不满足统一返回 HTTP 403「课程不存在或未开放」。
 
 **响应 `data`：**
 
@@ -475,7 +475,7 @@
 | 字段 | 说明 |
 | --- | --- |
 | requiredSeconds | 完成门槛秒数。站内视频 = `ceil(duration × completionRatio / 100)`；外链 = 固定 60（最低停留秒数） |
-| watchedSeconds | 本人累计观看秒数（`learning_video_progress.watched_seconds`，未完成时随心跳累加，完成后冻结） |
+| watchedSeconds | 站内为本人累计有效观看秒数；外链为单会话最高有效停留秒数，确认资格以当前会话的 `sessionWatchedSeconds` 为准；完成后冻结 |
 | completed（顶层） | 章节完成状态（该章必学视频是否全部完成，前端渲染目录图标用） |
 | completed / completedAt（videos 元素内） | 视频完成状态与完成时间（`learning_video_progress` 按 user+video 唯一） |
 
@@ -495,16 +495,17 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| sessionId | String | 是 | 观看会话 ID（UUID，进入学习页生成并全程复用；与视频中心 `/view` 同一命名，后端据此关联 `video_views`） |
-| viewDuration | Integer | 是 | 自上次心跳以来的停留增量秒数（0 允许，负数/超 60 截断为上限逻辑同 `VIEW_DELTA_CAP_SECONDS`） |
+| sessionId | String | 是 | 播放站内视频或打开外链时生成 UUID，绑定认证学员和当前章节视频 |
+| sequence | Long | 是 | 初始化为 0，后续逐一递增；重试发送原序号和原增量 |
+| viewDuration | Integer | 是 | 非负增量秒数；第 0 拍必须是 0，后续至多记服务端实际间隔和 60 秒中的较小值 |
 
 **处理流程：**
 
-1. 校验 chapterVideoId 存在（课程 `PUBLISHED` 且分配给本人班级，同 7.2 口径）；
-2. 调用 `videoService.recordVideoView(videoId, sessionId, viewDuration, request)`：首报建会话计观看数，同会话心跳累加 `video_views.view_duration`（既有机制，零改动）；
-3. 读写本人 `learning_video_progress`（user+video 唯一）：不存在则插入 `IN_PROGRESS` 并绑定 `session_id=sessionId`（当前活跃会话）；已存在且 `COMPLETED` → **只走第 2 步，不再累加 watchedSeconds、不改状态**（重看不重复计进度）；
-4. 未完成时：`watched_seconds += min(delta, 60)`；站内视频判定 `watched_seconds ≥ ceil(duration × completionRatio / 100)` → 置 `COMPLETED` 并记 `completed_at`。外链视频**不在此接口判定完成**（须显式确认走 7.5）；
-5. 章节完成后重算（派生，不落表）。
+1. 校验视频发布、课程发布且分配给本人所属的启用班级。
+2. 锁定本人、该视频的唯一进度行，再更新本人会话；重复或旧序号不写入，跳号拒绝。
+3. 站内跨会话累计，同时受同一进度行的实际间隔约束；时间达标记录完成。外链只累计当前会话停留，须另行确认。
+4. 已完成进度冻结；新会话仍可增加公共观看次数。公共统计不参与学习判定。
+5. 章节完成状态实时派生，不单独存储。
 
 **响应 `data`：**
 
@@ -512,7 +513,7 @@
 {
   "chapterVideoId": 12, "videoId": 5, "sourceType": 0,
   "required": true, "completionRatio": 70,
-  "watchedSeconds": 1300, "requiredSeconds": 1260,
+  "watchedSeconds": 1300, "sessionWatchedSeconds": 300, "requiredSeconds": 1260,
   "completed": true,
   "chapterCompleted": true,
   "chapterCompletedAfterThisVideo": true
@@ -531,18 +532,18 @@
 
 **POST `/api/learning/chapter-videos/{chapterVideoId}/external-complete`**
 
-请求体为空（停留数据全部来自服务端已累计的心跳，前端不传时长——不可信输入不参与校验）。
+Query 参数 `sessionId` 必填；请求体为空，不接收时长。
 
 **校验规则：**
 
 1. chapterVideoId 存在且 `videos.source_type=1`（站内视频调此接口 → `{code:500, message:"站内视频无需手动确认完成"}`）；
-2. 本人存在 `learning_video_progress` 行且绑定了 session_id；无进度行（一次心跳都没发过）→ `{code:500, message:"请先打开视频后再确认完成"}`；
-3. **最低停留**：当前绑定会话在 `video_views` 的累计 `view_duration ≥ 60` 秒。不满足 → `{code:500, message:"请继续观看满 60 秒后再确认完成（还差 X 秒）"}`（验收 5）；
+2. 查找本人视频进度下绑定到当前章节视频的学习会话，无会话则拒绝。
+3. **最低停留**：该个人学习会话累计停留至少 60 秒；不足返回剩余秒数。
 4. 通过 → 置 `COMPLETED` + `completed_at`，幂等（已 COMPLETED 直接返回成功响应）。
 
 **响应 `data`：** 结构同 7.4（completed=true、chapterCompleted 为确认后的章节状态）。
 
-**边界（决策表 #13）：** 最低停留按**当前绑定会话**计（`video_views.session_id` 粒度），用户刷新学习页会生成新会话、停留重新计时——60 秒要求本来就是"确认真看了"的轻量门槛，跨会话累计属于过度设计。
+**边界：** 刷新后重新打开外链会开始新会话；未完成时不合并会话停留。停留是轻量门槛，不表示外站已经播放或看完。
 
 ---
 
@@ -614,7 +615,7 @@
 ## 10. 完成判定口径（集中定义，前后端一致理解）
 
 1. **站内视频完成**：`learning_video_progress.watched_seconds ≥ ceil(videos.duration × chapter_videos.completion_ratio / 100)`，由 heartbeat 服务端判定，比例默认 70%。`watched_seconds` 为**本人累计**（跨会话累加，未完成前每次心跳累加 min(delta, 60)），非单会话时长。
-2. **外链视频完成**：学员在停留 ≥60 秒后点"完成学习"，服务端校验当前绑定会话 `video_views.view_duration ≥ 60` → 置 COMPLETED。不虚构精确进度（无百分比概念，`watchedSeconds` 仅展示停留累计）。
+2. **外链视频完成**：学员在停留 ≥60 秒后确认，服务端读取本人绑定会话的 `learning_video_sessions.watched_seconds` 决定是否完成。
 3. **章节完成**：该章节 `required=true` 的 chapter_videos **全部** COMPLETED。**无必学视频的章节视为已满足完成条件**（空集语义：教师没配必学 = 不设卡，直接计入课程进度分子）——统一口径、实现简单，且"教师配了必学才产生约束"（决策表 #15）。
 4. **课程进度**：`floor(已完成章节数 / 章节总数 × 100)`；章节总数 0 → 0%。DRAFT 课程对学员整体不可见，不产生进度问题。
 5. **重看**：已完成视频可无限重看；heartbeat 对 COMPLETED 的 progress 行只走观看统计（观看次数、会话时长），**不累加 watchedSeconds、不改状态、不改 completedAt**。观看次数沿用 `videos.view_count` 会话机制（新 sessionId 计 1 次）。
@@ -630,7 +631,8 @@
 1. **`courses`**：`name, description, cover_url, status(DRAFT/PUBLISHED), created_by(→users.id)` + BaseEntity；逻辑删除。`created_by` 是教师可编辑性的唯一依据（1 节语义），**必须落库**。
 2. **`course_chapters`**：`(course_id, title, description, sort)`；逻辑删除；查询按 `sort` 升序。建议 `(course_id, sort)` 索引。
 3. **`chapter_videos`**：`(chapter_id, video_id)` **唯一索引**（防重复添加）、`required, completion_ratio(default 70), sort`；物理删除，避免阻挡重新添加。按章节查询使用唯一索引前缀。
-4. **`learning_video_progress`**：`(user_id, video_id)` **唯一索引**（规格明文：按 user+video 唯一，重挂同章节不产生脏数据）、`chapter_video_id, status(IN_PROGRESS/COMPLETED), watched_seconds, session_id(当前活跃会话), completed_at`；**不逻辑删除**（学习历史保留，课程/章节删除不清）。`completed_at` 是错题本/诊断类功能未来关联"学过什么"的锚点。
+4. **`learning_video_progress`**：`(user_id, video_id)` 唯一，记录学习秒数、状态和完成时间，不随课程或章节删除；旧 `session_id` 不再使用。
+5. **`learning_video_sessions`**：`(progress_id, session_id)` 唯一，绑定章节视频，记录接受的最后序号、有效停留与服务端时间。
 5. **`course_classes`**（M1 已建）：本契约按 `(course_id, class_id)` 整体替换语义读写；唯一索引 `(course_id, class_id)`；`assigned_at` 建议记录首次分配时间（4.6 回显）。
 6. **派生计算**：章节完成、课程进度、7.1/7.2/8.1 的聚合一律**查询时实时计算**，不建章节完成表、不写冗余计数列（单班 ≤百人、章节 ≤几十，聚合成本可接受；冗余列要维护一致性，收益为零）。8.1 全班聚合请评估单条聚合 SQL（`class_members` join `learning_video_progress` group by user），避免 N+1。
 7. **`ClassScopeService` 复用点**：4.7（教师班集合）、7.1/7.2/7.3/7.4（学员班集合）、8.1（教师班集合）；新增方法**不需要**——M1 签名已够。课程级"创建者校验"是简单 `created_by` 比对，不进 ClassScopeService。

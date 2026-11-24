@@ -59,9 +59,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="updatedAt" label="最近更新" width="170" />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openAssign(row)">{{ canEdit(row) ? '分配班级' : '查看分配' }}</el-button>
+          <el-button link type="primary" @click="openProgress(row)">学习情况</el-button>
           <el-dropdown v-if="canEdit(row)" @command="(command) => handleCourseCommand(command, row)">
             <el-button link type="primary">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
@@ -142,7 +143,7 @@
           </template>
         </el-table-column>
         <el-table-column label="视频完成" width="130" align="center">
-          <template #default="{ row }">{{ row.completedVideoCount || 0 }} / {{ row.requiredVideoTotal || 0 }} 必学</template>
+          <template #default="{ row }">{{ row.completedRequiredVideoCount || 0 }} / {{ row.requiredVideoTotal || 0 }} 必学</template>
         </el-table-column>
         <el-table-column label="章节完成" width="120" align="center">
           <template #default="{ row }">{{ row.completedChapterCount || 0 }} / {{ row.chapterTotal || 0 }}</template>

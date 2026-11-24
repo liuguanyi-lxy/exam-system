@@ -106,8 +106,8 @@ export function sendLearningHeartbeat(chapterVideoId, data) {
 }
 
 /** POST /api/learning/chapter-videos/{chapterVideoId}/external-complete — 外链学习完成确认 */
-export function completeExternalLearning(chapterVideoId) {
-  return request.post(`/api/learning/chapter-videos/${chapterVideoId}/external-complete`)
+export function completeExternalLearning(chapterVideoId, sessionId) {
+  return request.post(`/api/learning/chapter-videos/${chapterVideoId}/external-complete`, null, { params: { sessionId } })
 }
 
 /** GET /api/courses/{courseId}/class-progress?classId= — 班级学员课程进度 */

@@ -113,6 +113,18 @@ const routes = [
         component: () => import('@/views/my/MyClassDetail.vue'),
         meta: { title: '班级详情', requiresAuth: true, roles: ['STUDENT'] },
       },
+      {
+        path: 'my/courses',
+        name: 'MyCourses',
+        component: () => import('@/views/course/MyCourses.vue'),
+        meta: { title: '我的课程', requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
+        path: 'my/courses/:id',
+        name: 'CourseLearning',
+        component: () => import('@/views/course/CourseLearning.vue'),
+        meta: { title: '课程学习', requiresAuth: true, roles: ['STUDENT'] },
+      },
     ],
   },
 
