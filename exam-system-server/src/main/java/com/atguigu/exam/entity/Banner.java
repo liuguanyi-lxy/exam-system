@@ -3,11 +3,13 @@ package com.atguigu.exam.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 轮播图实体类 - 首页轮播图展示信息
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("banners")
 @Schema(description = "轮播图信息")
 public class Banner extends BaseEntity{

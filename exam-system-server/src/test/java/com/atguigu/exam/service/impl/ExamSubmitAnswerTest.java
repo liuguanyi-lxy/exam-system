@@ -74,7 +74,8 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 提交题目不属于本次试卷_抛异常且不落库() {
+    // 提交不属于本次试卷的题目应抛异常且不落库
+    void submitRejectsQuestionOutsidePaperAndDoesNotSave() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
         // 试卷只包含题目 1，提交题目 999 属于越权落库
@@ -92,7 +93,8 @@ class ExamSubmitAnswerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void 提交题目属于试卷_保存答题记录并结束考试() {
+    // 提交试卷内题目应保存答题记录并结束考试
+    void submitSavesAnswersAndFinishesExam() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
         when(paperQuestionService.list(ArgumentMatchers.<Wrapper<PaperQuestion>>any())).thenReturn(List.of(paperQuestionOf(1L), paperQuestionOf(2L)));
@@ -119,7 +121,8 @@ class ExamSubmitAnswerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void 同一题目重复提交_只保留一条答题记录且后提交答案生效() {
+    // 同一题目重复提交只保留一条记录，后提交答案覆盖前一次答案
+    void repeatedSubmissionKeepsOneRecordWithLatestAnswer() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
         when(paperQuestionService.list(ArgumentMatchers.<Wrapper<PaperQuestion>>any())).thenReturn(List.of(paperQuestionOf(1L), paperQuestionOf(2L)));
@@ -140,7 +143,8 @@ class ExamSubmitAnswerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {ExamStatus.FINISHED, ExamStatus.GRADED})
-    void 已结束或已批阅状态_拒绝重复提交(String status) {
+    // 已结束或已批阅状态拒绝重复提交
+    void finishedOrGradedExamRejectsRepeatedSubmission(String status) {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         record.setStatus(status);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
@@ -156,7 +160,8 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 非本人考试记录_拒绝提交() {
+    // 非本人考试记录拒绝提交
+    void submissionRejectsRecordOwnedByAnotherStudent() {
         ExamRecord record = inProgressRecord(999L);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
 
@@ -196,7 +201,8 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 教师或管理员代交卷_跳过归属校验() {
+    // 教师或管理员代交卷时跳过归属校验
+    void teacherOrAdminCanSubmitOnBehalfAndSkipOwnershipCheck() {
         // 记录归属另一个学生，教师/管理员经管理端代交卷时允许操作
         ExamRecord record = inProgressRecord(999L);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
@@ -210,7 +216,8 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 空答案列表_仅结束考试不保存答题记录() {
+    // 空答案列表只结束考试，不保存答题记录
+    void emptyAnswersFinishExamWithoutSavingRecords() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
 

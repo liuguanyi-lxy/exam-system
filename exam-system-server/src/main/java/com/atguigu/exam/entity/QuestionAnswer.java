@@ -3,11 +3,13 @@ package com.atguigu.exam.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 题目答案实体类 - 题目的标准答案信息
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("question_answers")
 @Schema(description = "题目答案信息")
 public class QuestionAnswer  extends BaseEntity{

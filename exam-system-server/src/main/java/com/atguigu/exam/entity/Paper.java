@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ import java.util.List;
  */
 @TableName(value ="paper")
 @Data
+@EqualsAndHashCode(callSuper = false)
 @Schema(description = "试卷信息")
 public class Paper extends BaseEntity {
 

@@ -41,7 +41,8 @@ class WrongQuestionServiceImplTest {
     }
 
     @Test
-    void 错题本_size超上限截断为100() {
+    // 错题本 size 超上限时截断为 100
+    void wrongQuestionListCapsOversizedPageSizeAt100() {
         Page<WrongQuestionVo> page = queryAndCapturePage(1, 99999);
         assertEquals(1L, page.getCurrent());
         assertEquals(100L, page.getSize(), "size=99999 应被截断为上限 100");
@@ -49,20 +50,23 @@ class WrongQuestionServiceImplTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -5})
-    void 错题本_size为非正数回退默认条数(int size) {
+    // 错题本 size 为非正数时回退默认条数
+    void wrongQuestionListDefaultsPageSizeForNonPositiveValue(int size) {
         Page<WrongQuestionVo> page = queryAndCapturePage(1, size);
         assertEquals(10L, page.getSize(), "非正数 size 应回退默认每页 10 条");
     }
 
     @Test
-    void 错题本_分页参数为空时取第一页默认条数() {
+    // 错题本分页参数为空时取第一页和默认条数
+    void wrongQuestionListDefaultsPaginationWhenParametersAreMissing() {
         Page<WrongQuestionVo> page = queryAndCapturePage(null, null);
         assertEquals(1L, page.getCurrent());
         assertEquals(10L, page.getSize());
     }
 
     @Test
-    void 错题本_page超上限截断为10000() {
+    // 错题本页码超上限时截断为 10000
+    void wrongQuestionListCapsOversizedPageNumberAt10000() {
         Page<WrongQuestionVo> page = queryAndCapturePage(99999, 10);
         assertEquals(10000L, page.getCurrent(), "超大页码应被截断为上限 10000");
         assertEquals(10L, page.getSize());
@@ -70,7 +74,8 @@ class WrongQuestionServiceImplTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -3})
-    void 错题本_page为非正数时取第一页(int pageNo) {
+    // 错题本页码为非正数时取第一页
+    void wrongQuestionListDefaultsToFirstPageForNonPositiveNumber(int pageNo) {
         Page<WrongQuestionVo> page = queryAndCapturePage(pageNo, 10);
         assertEquals(1L, page.getCurrent(), "非正数页码应回退到第 1 页");
         assertEquals(10L, page.getSize());

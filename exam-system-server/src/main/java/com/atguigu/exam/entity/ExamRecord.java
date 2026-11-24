@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
  */
 @TableName(value ="exam_records")
 @Data
+@EqualsAndHashCode(callSuper = false)
 @Schema(description = "考试记录信息")
 public class ExamRecord extends BaseEntity {
 

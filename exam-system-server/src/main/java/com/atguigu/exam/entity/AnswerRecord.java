@@ -3,6 +3,7 @@ package com.atguigu.exam.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -10,6 +11,7 @@ import lombok.NoArgsConstructor;
  */
 @TableName(value ="answer_record")
 @Data
+@EqualsAndHashCode(callSuper = false)
 @NoArgsConstructor
 @Schema(description = "答题记录信息")
 public class AnswerRecord extends BaseEntity {

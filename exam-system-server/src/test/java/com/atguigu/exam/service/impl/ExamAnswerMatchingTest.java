@@ -53,37 +53,43 @@ class ExamAnswerMatchingTest {
     }
 
     @Test
-    void 单选题_字母答字母() {
+    // 单选题支持字母答案大小写归一化
+    void singleChoiceMatchesLetterAnswersCaseInsensitively() {
         assertTrue(examService.isObjectiveAnswerCorrect(singleChoice, "A", "a"));
         assertTrue(examService.isObjectiveAnswerCorrect(singleChoice, "A", "A"));
     }
 
     @Test
-    void 单选题_标准答字母_学生答内容() {
+    // 标准答案是字母时可匹配学生提交的选项内容
+    void singleChoiceMatchesOptionTextAgainstLetterAnswer() {
         assertTrue(examService.isObjectiveAnswerCorrect(singleChoice, "A", "Java"));
         assertTrue(examService.isObjectiveAnswerCorrect(singleChoice, "A", "A. Java"));
     }
 
     @Test
-    void 单选题_标准答内容_学生答字母() {
+    // 标准答案是选项内容时可匹配学生提交的字母
+    void singleChoiceMatchesLetterAgainstOptionTextAnswer() {
         assertTrue(examService.isObjectiveAnswerCorrect(singleChoice, "Java", "A"));
     }
 
     @Test
-    void 单选题_通过isCorrect标记判定() {
+    // 缺少标准答案字段时使用选项的 isCorrect 标记判定
+    void singleChoiceUsesCorrectMarkWhenAnswerTextMissing() {
         //标准答案字段缺失时，学生答对正确选项的内容也应判对
         assertTrue(examService.isObjectiveAnswerCorrect(singleChoice, "Java", "Java"));
         assertFalse(examService.isObjectiveAnswerCorrect(singleChoice, "Java", "Python"));
     }
 
     @Test
-    void 单选题_答错() {
+    // 单选题提交错误字母或内容应判错
+    void singleChoiceRejectsWrongAnswer() {
         assertFalse(examService.isObjectiveAnswerCorrect(singleChoice, "A", "B"));
         assertFalse(examService.isObjectiveAnswerCorrect(singleChoice, "A", "Python"));
     }
 
     @Test
-    void 多选题_选项内容含逗号和空格也能判对() {
+    // 多选题选项内容含逗号和空格时仍应正确判定
+    void multipleChoiceHandlesCommasAndSpacesInOptionText() {
         //选项文本里自带中文逗号和空格，按逗号切分会把一项内容拆成两段，历史实现会判错
         Question messy = new Question();
         messy.setType("CHOICE");
@@ -102,19 +108,22 @@ class ExamAnswerMatchingTest {
     }
 
     @Test
-    void 多选题_字母集合比对顺序无关() {
+    // 多选题字母集合比对不受答案顺序影响
+    void multipleChoiceLetterSetComparisonIgnoresOrder() {
         assertTrue(examService.isObjectiveAnswerCorrect(multiChoice, "AB", "A,B"));
         assertTrue(examService.isObjectiveAnswerCorrect(multiChoice, "A,B", "BA"));
         assertFalse(examService.isObjectiveAnswerCorrect(multiChoice, "AB", "A,B,C"));
     }
 
     @Test
-    void 多选题_内容比对() {
+    // 多选题按选项内容比对且不受顺序影响
+    void multipleChoiceComparesOptionTextWithoutOrder() {
         assertTrue(examService.isObjectiveAnswerCorrect(multiChoice, "A内容,B内容", "B内容、A内容"));
     }
 
     @Test
-    void 多选题_纯英文选项内容不能被当成字母答案() {
+    // 纯英文选项内容不能误判成字母答案
+    void multipleChoiceDoesNotTreatEnglishOptionTextAsLetters() {
         //public/private/protected 都是纯字母单词，历史实现会把它们误判成"字母答案"再按字符集合比较，导致判错
         Question englishOptions = new Question();
         englishOptions.setType("CHOICE");
@@ -130,7 +139,8 @@ class ExamAnswerMatchingTest {
     }
 
     @Test
-    void 多选题_选项sort从1开始时按位置映射字母() {
+    // sort 从 1 开始时按选项位置映射字母
+    void multipleChoiceMapsOneBasedSortToLetters() {
         //题库中存在 sort 从 1 开始的题：正确项是第 1/3/4 个，标准答案记为 ACD
         Question oneBasedSort = new Question();
         oneBasedSort.setType("CHOICE");
@@ -147,7 +157,8 @@ class ExamAnswerMatchingTest {
     }
 
     @Test
-    void 判断题_中英文归一化() {
+    // 判断题支持中英文、真假值和字母形式归一化
+    void judgeNormalizesChineseEnglishAndBooleanAnswers() {
         assertTrue(examService.isObjectiveAnswerCorrect(judge, "TRUE", "正确"));
         assertTrue(examService.isObjectiveAnswerCorrect(judge, "TRUE", "true"));
         assertTrue(examService.isObjectiveAnswerCorrect(judge, "正确", "T"));
@@ -156,7 +167,8 @@ class ExamAnswerMatchingTest {
     }
 
     @Test
-    void 空答案判错() {
+    // 空答案应判错
+    void emptyAnswerIsIncorrect() {
         assertFalse(examService.isObjectiveAnswerCorrect(singleChoice, "A", null));
         assertFalse(examService.isObjectiveAnswerCorrect(singleChoice, "A", "  "));
         assertFalse(examService.isObjectiveAnswerCorrect(judge, "TRUE", null));

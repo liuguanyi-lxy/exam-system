@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 用户实体类 - 系统用户信息模型
@@ -23,6 +24,7 @@ import lombok.Data;
  * @version 1.0
  */
 @Data  // Lombok注解：自动生成getter、setter、toString、equals、hashCode方法
+@EqualsAndHashCode(callSuper = false)
 @TableName("users")  // MyBatis Plus注解：指定对应的数据库表名
 @Schema(description = "用户信息")
 public class User extends BaseEntity {
