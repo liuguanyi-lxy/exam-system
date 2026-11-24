@@ -3,11 +3,13 @@ package com.atguigu.exam.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 题目选项实体类 - 选择题的选项信息
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("question_choices")
 @Schema(description = "题目选项信息")
 public class QuestionChoice extends BaseEntity{

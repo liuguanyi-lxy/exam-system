@@ -1,6 +1,7 @@
 package com.atguigu.exam.utils;
 
 import com.atguigu.exam.vo.QuestionImportVo;
+import com.atguigu.exam.vo.StudentImportVo;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Excel文件处理工具类
@@ -201,4 +203,74 @@ public class ExcelUtil {
             return out.toByteArray();
         }
     }
-} 
+
+    /**
+     * 生成学员批量导入模板文件的字节数组（契约 5.4）
+     * 两列表头：用户名、姓名；列 A=用户名（必填），列 B=姓名（选填）
+     * @return Excel 模板文件字节
+     */
+    public static byte[] generateStudentTemplate() throws IOException {
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("学员导入模板");
+
+        // 创建标题行
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"用户名", "姓名"};
+        for (int i = 0; i < headers.length; i++) {
+            headerRow.createCell(i).setCellValue(headers[i]);
+        }
+
+        // 创建示例数据行
+        Row exampleRow = sheet.createRow(1);
+        exampleRow.createCell(0).setCellValue("student01");
+        exampleRow.createCell(1).setCellValue("张三");
+
+        // 自动调整列宽
+        for (int i = 0; i < headers.length; i++) {
+            sheet.autoSizeColumn(i);
+        }
+
+        try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            workbook.write(out);
+            workbook.close();
+            return out.toByteArray();
+        }
+    }
+
+    /**
+     * 解析学员导入 Excel 文件（契约 5.3，解析阶段不入库）
+     * 第 1 行表头，数据行从第 2 行起；null 行跳过（不计入结果），
+     * 用户名为空的行也返回（row 已记录），由导入服务计入 failedRows，不在这里整单拒绝。
+     *
+     * @param file Excel 文件（.xlsx/.xls，后缀不区分大小写）
+     * @return 学员导入行列表（含 Excel 行号）
+     * @throws IllegalArgumentException 文件为空或后缀不受支持
+     * @throws IOException 文件读取异常
+     */
+    public static List<StudentImportVo> parseStudentExcel(MultipartFile file) throws IOException {
+        String fileName = file == null || file.isEmpty() ? null : file.getOriginalFilename();
+        String normalizedName = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        boolean xlsx = normalizedName.endsWith(".xlsx");
+        if (!xlsx && !normalizedName.endsWith(".xls")) {
+            throw new IllegalArgumentException("请上传 .xlsx 或 .xls 文件");
+        }
+
+        List<StudentImportVo> rows = new ArrayList<>();
+        try (InputStream inputStream = file.getInputStream();
+             Workbook workbook = xlsx ? new XSSFWorkbook(inputStream) : new HSSFWorkbook(inputStream)) {
+            Sheet sheet = workbook.getSheetAt(0);
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                StudentImportVo vo = new StudentImportVo();
+                vo.setRow(i + 1); // Excel 行号（1 起，含表头），failedRows 回显用
+                vo.setUsername(getCellValue(row.getCell(0)));
+                vo.setRealName(getCellValue(row.getCell(1)));
+                rows.add(vo);
+            }
+        }
+
+        return rows;
+    }
+}

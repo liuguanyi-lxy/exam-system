@@ -1,7 +1,10 @@
 package com.atguigu.exam.exceptionhandlers;
 
 import com.atguigu.exam.common.Result;
+import com.atguigu.exam.exception.ClassScopeException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -117,5 +120,20 @@ public class GlobalExceptionHandler {
         log.error("服务器发生运行时异常！", e);
         e.getStackTrace();
         return Result.error(e.getMessage() != null ? e.getMessage() : "服务器内部错误");
+    }
+
+    /**
+     * 班级数据范围越权：教师访问非负责班级的单资源（详情/成员/操作）。
+     * 映射为 HTTP 403 + {code:403, message}，与 AuthInterceptor 角色不足的 403 风格一致；
+     * 不能落到 Exception 兜底（会变成 HTTP 200 + code 500，丢失越权语义）。
+     *
+     * @param e 捕获到的班级数据范围越权异常
+     * @return HTTP 403 状态码 + 统一 Result 结构（code=403）
+     */
+    @ExceptionHandler(ClassScopeException.class)
+    public ResponseEntity<Result<Void>> handleClassScopeException(ClassScopeException e) {
+        log.warn("班级数据范围越权：{}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Result.error(403, e.getMessage() != null ? e.getMessage() : "无权访问该班级"));
     }
 }

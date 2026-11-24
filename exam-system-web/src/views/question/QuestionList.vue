@@ -20,6 +20,9 @@
       <el-select v-model="filters.type" placeholder="题型" clearable @change="search" style="width:120px">
         <el-option label="选择题" value="CHOICE" /><el-option label="判断题" value="JUDGE" /><el-option label="简答题" value="TEXT" /><el-option label="手写代码题" value="CODE" />
       </el-select>
+      <el-select v-model="filters.knowledgePointId" placeholder="知识点" clearable filterable @change="search" style="width:160px">
+        <el-option v-for="k in knowledgePoints" :key="k.id" :label="k.name" :value="k.id" />
+      </el-select>
       <el-button type="primary" @click="search">搜索</el-button>
       <el-button @click="resetFilters">重置</el-button>
     </div>
@@ -41,6 +44,14 @@
       <el-table-column label="分类" width="110">
         <template #default="{ row }">{{ categoryName(row) }}</template>
       </el-table-column>
+      <el-table-column label="知识点" min-width="150">
+        <template #default="{ row }">
+          <template v-if="row.knowledgePoints?.length">
+            <el-tag v-for="kp in row.knowledgePoints" :key="kp.id" size="small" style="margin-right:4px">{{ kp.name }}</el-tag>
+          </template>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="$router.push(`/admin/questions/edit/${row.id}`)">编辑</el-button>
@@ -61,15 +72,17 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { getQuestionList, deleteQuestion } from '@/api/question'
 import { getCategories } from '@/api/category'
+import { getAllKnowledgePoints } from '@/api/knowledgePoint'
 
 const loading = ref(false)
 const tableData = ref([])
 const categories = ref([])
+const knowledgePoints = ref([])
 const page = ref(1)
 const size = ref(10)
 const total = ref(0)
 
-const filters = reactive({ keyword: '', categoryId: null, difficulty: '', type: '' })
+const filters = reactive({ keyword: '', categoryId: null, difficulty: '', type: '', knowledgePointId: null })
 const TYPE_LABELS = { CHOICE: '选择题', JUDGE: '判断题', TEXT: '简答题', CODE: '手写代码题' }
 
 // 列表接口不返回嵌套的 category 对象，用分类字典补齐，避免"分类"列整列为空
@@ -90,7 +103,7 @@ async function loadData() {
 
 function search() { page.value = 1; loadData() }
 function resetFilters() {
-  Object.assign(filters, { keyword: '', categoryId: null, difficulty: '', type: '' })
+  Object.assign(filters, { keyword: '', categoryId: null, difficulty: '', type: '', knowledgePointId: null })
   search()
 }
 
@@ -102,6 +115,7 @@ async function handleDelete(row) {
 
 onMounted(async () => {
   try { categories.value = await getCategories() || []; } catch {}
+  try { knowledgePoints.value = await getAllKnowledgePoints() || []; } catch {}
   loadData()
 })
 </script>

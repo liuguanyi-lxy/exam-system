@@ -29,10 +29,13 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="320">
+      <el-table-column label="操作" width="400">
         <template #default="{ row }">
           <el-button size="small" @click="$router.push(`/admin/papers/create?id=${row.id}`)">编辑</el-button>
           <el-button size="small" link type="primary" @click="$router.push(`/admin/papers/${row.id}/records`)">考生成绩</el-button>
+          <el-button size="small" link type="primary" @click="$router.push({ name: 'ExamAssign', query: { examId: row.id } })">
+            {{ row.status === 'PUBLISHED' ? '分配班级' : '查看分配' }}
+          </el-button>
           <el-button size="small" v-if="row.status === 'DRAFT'" type="success" @click="changeStatus(row, 'PUBLISHED')">发布</el-button>
           <el-button size="small" v-if="row.status === 'PUBLISHED'" type="warning" @click="changeStatus(row, 'STOPPED')">停止</el-button>
           <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>

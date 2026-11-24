@@ -4,12 +4,10 @@ import com.atguigu.exam.common.ExamStatus;
 import com.atguigu.exam.entity.AnswerRecord;
 import com.atguigu.exam.entity.ExamRecord;
 import com.atguigu.exam.entity.PaperQuestion;
-import com.atguigu.exam.entity.User;
 import com.atguigu.exam.mapper.ExamRecordMapper;
 import com.atguigu.exam.service.AnswerRecordService;
 import com.atguigu.exam.service.PaperQuestionService;
 import com.atguigu.exam.service.PaperService;
-import com.atguigu.exam.service.UserService;
 import com.atguigu.exam.vo.SubmitAnswerVo;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,8 +59,6 @@ class ExamSubmitAnswerTest {
     @Mock
     private AnswerRecordService answerRecordService;
     @Mock
-    private UserService userService;
-    @Mock
     private ExamRecordMapper examRecordMapper;
 
     private ExamServiceImpl examService;
@@ -71,13 +69,13 @@ class ExamSubmitAnswerTest {
         ReflectionTestUtils.setField(examService, "paperService", paperService);
         ReflectionTestUtils.setField(examService, "paperQuestionService", paperQuestionService);
         ReflectionTestUtils.setField(examService, "answerRecordService", answerRecordService);
-        ReflectionTestUtils.setField(examService, "userService", userService);
         // ServiceImpl.getById / updateById 内部调用 baseMapper，注入 mock 避免真库
         ReflectionTestUtils.setField(examService, "baseMapper", examRecordMapper);
     }
 
     @Test
-    void 提交题目不属于本次试卷_抛异常且不落库() {
+    // 提交不属于本次试卷的题目应抛异常且不落库
+    void submitRejectsQuestionOutsidePaperAndDoesNotSave() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
         // 试卷只包含题目 1，提交题目 999 属于越权落库
@@ -95,7 +93,8 @@ class ExamSubmitAnswerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void 提交题目属于试卷_保存答题记录并结束考试() {
+    // 提交试卷内题目应保存答题记录并结束考试
+    void submitSavesAnswersAndFinishesExam() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
         when(paperQuestionService.list(ArgumentMatchers.<Wrapper<PaperQuestion>>any())).thenReturn(List.of(paperQuestionOf(1L), paperQuestionOf(2L)));
@@ -122,7 +121,8 @@ class ExamSubmitAnswerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void 同一题目重复提交_只保留一条答题记录且后提交答案生效() {
+    // 同一题目重复提交只保留一条记录，后提交答案覆盖前一次答案
+    void repeatedSubmissionKeepsOneRecordWithLatestAnswer() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
         when(paperQuestionService.list(ArgumentMatchers.<Wrapper<PaperQuestion>>any())).thenReturn(List.of(paperQuestionOf(1L), paperQuestionOf(2L)));
@@ -143,7 +143,8 @@ class ExamSubmitAnswerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {ExamStatus.FINISHED, ExamStatus.GRADED})
-    void 已结束或已批阅状态_拒绝重复提交(String status) {
+    // 已结束或已批阅状态拒绝重复提交
+    void finishedOrGradedExamRejectsRepeatedSubmission(String status) {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         record.setStatus(status);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
@@ -159,7 +160,8 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 非本人考试记录_拒绝提交() {
+    // 非本人考试记录拒绝提交
+    void submissionRejectsRecordOwnedByAnotherStudent() {
         ExamRecord record = inProgressRecord(999L);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
 
@@ -173,15 +175,10 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 历史记录无考生ID且姓名不一致_拒绝提交() {
+    void submissionRejectsLegacyRecordWithoutOwnerId() {
         ExamRecord record = inProgressRecord(null);
         record.setStudentName("张三");
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
-
-        User currentUser = new User();
-        currentUser.setId(STUDENT_ID);
-        currentUser.setRealName("李四");
-        when(userService.getById(STUDENT_ID)).thenReturn(currentUser);
 
         RuntimeException exception = assertThrows(RuntimeException.class,
                 () -> examService.customSubmitAnswer(EXAM_RECORD_ID,
@@ -192,7 +189,20 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 教师或管理员代交卷_跳过归属校验() {
+    void gradingDoesNotFinishAnUnsubmittedAttempt() {
+        ExamServiceImpl service = spy(examService);
+        doReturn(inProgressRecord(STUDENT_ID)).when(service).customGetExamRecordById(EXAM_RECORD_ID);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.gradeExam(EXAM_RECORD_ID, STUDENT_ID, false));
+
+        assertEquals("请先提交答卷再判卷", exception.getMessage());
+        verify(examRecordMapper, never()).updateById(any(ExamRecord.class));
+    }
+
+    @Test
+    // 教师或管理员代交卷时跳过归属校验
+    void teacherOrAdminCanSubmitOnBehalfAndSkipOwnershipCheck() {
         // 记录归属另一个学生，教师/管理员经管理端代交卷时允许操作
         ExamRecord record = inProgressRecord(999L);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
@@ -206,7 +216,8 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 空答案列表_仅结束考试不保存答题记录() {
+    // 空答案列表只结束考试，不保存答题记录
+    void emptyAnswersFinishExamWithoutSavingRecords() {
         ExamRecord record = inProgressRecord(STUDENT_ID);
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
 

@@ -29,6 +29,48 @@
       <p class="summary-empty" v-else>本次考试暂无 AI 评语</p>
     </div>
 
+    <section v-if="result" class="diagnostic-card">
+      <div class="diagnostic-heading">
+        <div>
+          <h3>学习诊断</h3>
+          <p v-if="diagnostic?.status === 'WAITING_FOR_GRADE'">交卷后生成诊断报告</p>
+          <p v-else-if="diagnostic?.status === 'PENDING'">报告正在生成，页面会自动更新</p>
+          <p v-else-if="diagnostic?.status === 'FAILED'">报告生成遇到问题，可以重试</p>
+          <p v-else-if="diagnostic?.status === 'DEGRADED'">报告已生成，部分建议使用了降级分析</p>
+          <p v-else-if="diagnostic?.status === 'READY'">报告已生成</p>
+          <p v-else>正在查询报告状态</p>
+        </div>
+        <el-button v-if="diagnostic?.status === 'FAILED'" :loading="diagnosticLoading" @click="retryDiagnostic">重试</el-button>
+      </div>
+      <template v-if="diagnostic?.report">
+        <div class="diagnostic-metrics">
+          <div><strong>{{ diagnostic.report.objectiveScore ?? '—' }}</strong><span>客观题</span></div>
+          <div><strong>{{ diagnostic.report.subjectiveScore ?? '—' }}</strong><span>主观题</span></div>
+          <div><strong>{{ confidenceLabel(diagnostic.report.confidence) }}</strong><span>置信度</span></div>
+        </div>
+        <p v-if="diagnostic.report.summary" class="diagnostic-summary">{{ diagnostic.report.summary }}</p>
+        <div v-if="diagnostic.report.weakPoints?.length" class="weak-points">
+          <h4>优先复习</h4>
+          <el-tag v-for="point in diagnostic.report.weakPoints" :key="point.id || point.name" type="warning" effect="light">
+            {{ point.name }} · {{ percentage(point.rate) }}
+          </el-tag>
+        </div>
+        <div v-if="diagnostic.report.recommendations?.length" class="recommendations">
+          <h4>下一步建议</h4>
+          <p v-for="(item, index) in diagnostic.report.recommendations" :key="index">{{ item }}</p>
+        </div>
+        <div v-if="canReview" class="review-box">
+          <div class="review-state">{{ diagnostic.reviewedAt ? `已由 ${diagnostic.reviewedBy || '教师'}复核` : '教师复核' }}</div>
+          <el-input v-model="reviewNote" type="textarea" :rows="2" maxlength="1000" show-word-limit placeholder="记录复核结论或需要人工跟进的内容" />
+          <el-button type="primary" :loading="reviewLoading" @click="submitReview">保存复核</el-button>
+        </div>
+      </template>
+      <div v-else class="diagnostic-empty">
+        <el-button v-if="diagnostic?.status === 'PENDING'" link :loading="diagnosticLoading" @click="loadDiagnostic">刷新状态</el-button>
+        <span v-else-if="diagnosticError">{{ diagnosticError }}</span>
+      </div>
+    </section>
+
     <!-- 答题详情 -->
     <div v-if="result?.answerRecords?.length" class="answers-section">
       <h3 class="answers-title">答题详情</h3>
@@ -69,6 +111,23 @@
           <el-icon :size="14"><InfoFilled /></el-icon>
           <span>{{ a.aiCorrection }}</span>
         </div>
+        <div class="chat-actions">
+          <el-button v-if="userStore.role === 'STUDENT'" link type="primary" :loading="chatLoadingId === a.questionId" @click="toggleChat(a.questionId)">
+            {{ openChatId === a.questionId ? '收起逐题追问' : '追问这道题' }}
+          </el-button>
+        </div>
+        <div v-if="openChatId === a.questionId" class="chat-panel">
+          <el-empty v-if="!chatTurns[a.questionId]?.length && chatLoadingId !== a.questionId" description="还没有追问记录" :image-size="48" />
+          <div v-for="turn in chatTurns[a.questionId] || []" :key="turn.requestId || turn.roundNo" class="chat-turn">
+            <p><strong>你</strong>{{ turn.message }}</p>
+            <p><strong>答</strong>{{ turn.answer || '正在生成回答' }}</p>
+          </div>
+          <el-input v-model="chatDrafts[a.questionId]" type="textarea" :rows="2" maxlength="1000" show-word-limit placeholder="针对你的作答继续提问" />
+          <div class="chat-footer">
+            <span>{{ (chatTurns[a.questionId] || []).length >= 20 ? '本题追问轮数已达上限' : '每道题最多追问 20 轮' }}</span>
+            <el-button type="primary" :loading="chatLoadingId === a.questionId" :disabled="!(chatDrafts[a.questionId] || '').trim() || (chatTurns[a.questionId] || []).length >= 20" @click="sendQuestion(a.questionId)">发送</el-button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -92,16 +151,32 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { useExamStore } from '@/stores/exam'
 import { getExamRecordById } from '@/api/examRecord'
+import { getDiagnosticReport, retryDiagnosticReport, reviewDiagnosticReport, getQuestionChats, askQuestionChat } from '@/api/diagnostics'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const examStore = useExamStore()
 const loading = ref(false)
 const grading = ref(false)
 const result = ref(null)
+const userStore = useUserStore()
+const diagnostic = ref(null)
+const diagnosticLoading = ref(false)
+const diagnosticError = ref('')
+const reviewNote = ref('')
+const reviewLoading = ref(false)
+const openChatId = ref(null)
+const chatLoadingId = ref(null)
+const chatTurns = reactive({})
+const chatDrafts = reactive({})
+let diagnosticPoll = null
+let chatPoll = null
+const recordId = computed(() => Number(route.params.recordId))
+const canReview = computed(() => ['ADMIN', 'TEACHER'].includes(userStore.role) && !!diagnostic.value?.report)
 
 const resultIcon = computed(() => {
   if (!result.value) return 'InfoFilled'
@@ -199,7 +274,118 @@ function usedMinutes(start, end) {
 
 async function handleGrade() {
   grading.value = true
-  try { result.value = await examStore.gradeExam(); examStore.reset() } finally { grading.value = false }
+  try {
+    result.value = await examStore.gradeExam()
+    examStore.reset()
+    await loadDiagnostic()
+  } finally { grading.value = false }
+}
+
+function confidenceLabel(value) {
+  return ({ NORMAL: '高', LIMITED: '低' })[value] || value || '待评估'
+}
+
+function percentage(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
+  return `${Math.round(Number(value))}%`
+}
+
+async function loadDiagnostic() {
+  if (!recordId.value || diagnosticLoading.value) return
+  diagnosticLoading.value = true
+  diagnosticError.value = ''
+  try {
+    diagnostic.value = await getDiagnosticReport(recordId.value)
+    reviewNote.value = diagnostic.value?.reviewNote || ''
+    if (diagnostic.value?.status === 'PENDING' && !diagnosticPoll) {
+      diagnosticPoll = setInterval(async () => {
+        if (!diagnostic.value || diagnostic.value.status !== 'PENDING') return stopDiagnosticPoll()
+        await loadDiagnostic()
+      }, 4000)
+    } else if (diagnostic.value?.status !== 'PENDING') stopDiagnosticPoll()
+  } catch (error) {
+    diagnosticError.value = error?.message || '诊断报告暂时无法读取'
+  } finally {
+    diagnosticLoading.value = false
+  }
+}
+
+function stopDiagnosticPoll() {
+  if (diagnosticPoll) clearInterval(diagnosticPoll)
+  diagnosticPoll = null
+}
+
+async function submitReview() {
+  if (!recordId.value || reviewLoading.value) return
+  reviewLoading.value = true
+  try {
+    diagnostic.value = await reviewDiagnosticReport(recordId.value, reviewNote.value.trim())
+  } finally { reviewLoading.value = false }
+}
+
+async function retryDiagnostic() {
+  if (!recordId.value || diagnosticLoading.value) return
+  diagnosticLoading.value = true
+  diagnosticError.value = ''
+  try {
+    diagnostic.value = await retryDiagnosticReport(recordId.value)
+    if (diagnostic.value?.status === 'PENDING' && !diagnosticPoll) {
+      diagnosticPoll = setInterval(() => loadDiagnostic(), 4000)
+    }
+  } catch (error) {
+    diagnosticError.value = error?.message || '报告重试失败'
+  } finally { diagnosticLoading.value = false }
+}
+
+async function toggleChat(questionId) {
+  if (openChatId.value === questionId) {
+    openChatId.value = null
+    return
+  }
+  openChatId.value = questionId
+  if (chatTurns[questionId]) return
+  chatLoadingId.value = questionId
+  try {
+    chatTurns[questionId] = await getQuestionChats(recordId.value, questionId) || []
+  } finally { chatLoadingId.value = null }
+}
+
+function createRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16)
+    return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16)
+  })
+}
+
+function syncChatPolling() {
+  const hasPending = Object.values(chatTurns).some((turns) => turns.some((turn) => turn.status === 'PENDING'))
+  if (hasPending && !chatPoll) {
+    chatPoll = setInterval(async () => {
+      if (!openChatId.value) return
+      try {
+        chatTurns[openChatId.value] = await getQuestionChats(recordId.value, openChatId.value) || []
+        if (!Object.values(chatTurns).some((turns) => turns.some((turn) => turn.status === 'PENDING'))) stopChatPoll()
+      } catch {}
+    }, 2500)
+  } else if (!hasPending) stopChatPoll()
+}
+
+function stopChatPoll() {
+  if (chatPoll) clearInterval(chatPoll)
+  chatPoll = null
+}
+
+async function sendQuestion(questionId) {
+  const message = (chatDrafts[questionId] || '').trim()
+  if (!message || chatLoadingId.value) return
+  chatLoadingId.value = questionId
+  try {
+    const turn = await askQuestionChat(recordId.value, questionId, { requestId: createRequestId(), message })
+    chatTurns[questionId] = [...(chatTurns[questionId] || []), turn]
+    chatDrafts[questionId] = ''
+    syncChatPolling()
+  } finally { chatLoadingId.value = null }
 }
 
 onMounted(async () => {
@@ -207,7 +393,13 @@ onMounted(async () => {
   try {
     const record = await getExamRecordById(Number(route.params.recordId))
     if (record?.status === '已批阅' || record?.score !== null) { result.value = record }
+    if (result.value) await loadDiagnostic()
   } finally { loading.value = false }
+})
+
+onBeforeUnmount(() => {
+  stopDiagnosticPoll()
+  stopChatPoll()
 })
 </script>
 
@@ -309,6 +501,21 @@ onMounted(async () => {
     margin-bottom: 12px;
   }
 }
+
+.diagnostic-card { @include glass; border-radius: $radius-lg; padding: 20px; margin-bottom: 22px; }
+.diagnostic-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; h3 { margin: 0 0 5px; font-size: 16px; } p { margin: 0; color: $text-muted; font-size: 13px; } }
+.diagnostic-metrics { display: flex; gap: 30px; padding: 18px 0; div { display: flex; flex-direction: column; gap: 3px; } strong { font-size: 19px; color: $text-primary; } span { color: $text-muted; font-size: 12px; } }
+.diagnostic-summary { margin: 0; line-height: 1.75; white-space: pre-line; color: $text-secondary; }
+.weak-points, .recommendations { margin-top: 16px; h4 { font-size: 13px; margin: 0 0 9px; } }
+.weak-points { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; h4 { width: 100%; } }
+.recommendations p { margin: 6px 0; color: $text-secondary; font-size: 13px; line-height: 1.6; }
+.review-box { display: grid; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid $border; }
+.review-state { color: $text-muted; font-size: 12px; }
+.diagnostic-empty { padding-top: 12px; color: $text-muted; font-size: 13px; }
+.chat-actions { border-top: 1px solid $border; margin-top: 12px; padding-top: 8px; }
+.chat-panel { display: grid; gap: 10px; margin-top: 8px; padding: 14px; border: 1px solid $border; border-radius: $radius-sm; background: #fcfcfd; }
+.chat-turn { padding: 10px 12px; border-radius: $radius-sm; background: white; p { margin: 4px 0; color: $text-secondary; font-size: 13px; line-height: 1.6; white-space: pre-line; } strong { display: inline-block; width: 30px; color: $text-primary; } }
+.chat-footer { display: flex; justify-content: space-between; align-items: center; color: $text-muted; font-size: 12px; }
 .answer-card {
   @include glass;
   border-radius: $radius-lg;

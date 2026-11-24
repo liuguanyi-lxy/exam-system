@@ -6,6 +6,10 @@
       <el-select v-model="filters.paperId" placeholder="按试卷筛选" clearable filterable style="width:240px">
         <el-option v-for="p in papers" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
+      <el-select v-model="filters.classId" placeholder="按班级筛选" clearable filterable style="width:200px">
+        <el-option v-for="item in classes" :key="item.id" :label="formatExamClassOption(item)" :value="item.id" />
+      </el-select>
+      <el-button v-if="classOptionsFailed" link type="primary" @click="loadClassOptions">重试班级列表</el-button>
       <el-input v-model="filters.studentName" placeholder="考生姓名" clearable style="width:180px" />
       <el-select v-model="filters.status" placeholder="状态" clearable style="width:140px">
         <el-option label="进行中" :value="0" /><el-option label="已完成" :value="1" /><el-option label="已批阅" :value="2" />
@@ -21,6 +25,9 @@
       <el-table-column prop="studentName" label="考生" width="100" />
       <el-table-column label="试卷" min-width="160">
         <template #default="{ row }">{{ row.paper?.name || '-' }}</template>
+      </el-table-column>
+      <el-table-column label="班级" min-width="120">
+        <template #default="{ row }">{{ row.className || '-' }}</template>
       </el-table-column>
       <el-table-column label="得分" width="100">
         <template #default="{ row }">{{ row.score != null ? row.score : '-' }}</template>
@@ -52,24 +59,28 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { getExamRecordList, deleteExamRecord } from '@/api/examRecord'
 import { getPaperList } from '@/api/paper'
+import { formatExamClassOption, getExamClassOptions } from '@/api/examClass'
 
 const loading = ref(false)
 const tableData = ref([])
 const page = ref(1)
 const size = ref(20)
 const total = ref(0)
-const filters = reactive({ paperId: null, studentName: '', status: null, startDate: '', endDate: '' })
+const filters = reactive({ paperId: null, classId: null, studentName: '', status: null, startDate: '', endDate: '' })
 const papers = ref([])
+const classes = ref([])
+const classOptionsFailed = ref(false)
 
 async function loadData() {
   loading.value = true
   try {
     const params = { page: page.value, size: size.value }
     if (filters.paperId) params.paperId = filters.paperId
+    if (filters.classId) params.classId = filters.classId
     if (filters.studentName) params.studentName = filters.studentName
     if (filters.status != null) params.status = filters.status
     if (filters.startDate) params.startDate = filters.startDate
@@ -81,7 +92,7 @@ async function loadData() {
 }
 
 function search() { page.value = 1; loadData() }
-function resetFilters() { Object.assign(filters, { paperId: null, studentName: '', status: null, startDate: '', endDate: '' }); search() }
+function resetFilters() { Object.assign(filters, { paperId: null, classId: null, studentName: '', status: null, startDate: '', endDate: '' }); search() }
 
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确认删除考生"${row.studentName}"的考试记录？`, '警告', { type: 'warning' })
@@ -90,9 +101,19 @@ async function handleDelete(row) {
   loadData()
 }
 
-import { onMounted } from 'vue'
+async function loadClassOptions() {
+  classOptionsFailed.value = false
+  try {
+    classes.value = await getExamClassOptions()
+  } catch {
+    classes.value = []
+    classOptionsFailed.value = true
+  }
+}
+
 onMounted(async () => {
-  try { papers.value = await getPaperList() || [] } catch { papers.value = [] }
   loadData()
+  loadClassOptions()
+  try { papers.value = await getPaperList() || [] } catch { papers.value = [] }
 })
 </script>

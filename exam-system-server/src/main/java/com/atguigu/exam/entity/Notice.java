@@ -3,11 +3,13 @@ package com.atguigu.exam.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 公告实体类 - 系统公告信息
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("notices")
 @Schema(description = "系统公告信息")
 public class Notice extends BaseEntity {

@@ -15,6 +15,8 @@ public class QuestionPageVo {
     @Schema(description = "题目分类ID",
             example = "1")
     private Long categoryId;
+    @Schema(description = "题目标注知识点ID")
+    private Long knowledgePointId;
     @Schema(description = "题目难度等级",
             example = "MEDIUM",
             allowableValues = {"EASY", "MEDIUM", "HARD"})

@@ -2,8 +2,10 @@ package com.atguigu.exam.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.atguigu.exam.vo.KnowledgePointItemVo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,6 +29,7 @@ import java.util.List;
  * @version 1.0
  */
 @Data  // Lombok注解：自动生成所有getter、setter方法
+@EqualsAndHashCode(callSuper = false)
 @TableName("questions")  // 对应数据库表：questions
 @Schema(description = "题目信息")
 public class Question extends BaseEntity {
@@ -85,4 +88,12 @@ public class Question extends BaseEntity {
     @Schema(description = "题目所属分类信息")
     @TableField(exist = false)
     private Category category;
+
+    @Schema(description = "题目标注知识点，非数据库字段")
+    @TableField(exist = false)
+    private List<KnowledgePointItemVo> knowledgePoints;
+
+    @Schema(description = "创建或更新时整体替换的知识点ID集合，非数据库字段")
+    @TableField(exist = false)
+    private List<Long> knowledgePointIds;
 } 

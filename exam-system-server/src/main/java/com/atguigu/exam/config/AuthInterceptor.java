@@ -121,10 +121,6 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 题目浏览：热门题目只返回题干（已脱敏），可用于首页
         if (uri.startsWith("/api/questions/popular")) return true;
         // 题库列表和单题详情包含答案/解析，必须登录后再按角色脱敏，不再匿名放行
-        // 试卷列表可以公开（不含题目），试卷详情含题目与答案，要求登录
-        if (uri.equals("/api/papers/list")) return true;
-        // 排行榜
-        if (uri.startsWith("/api/exam-records/ranking")) return true;
         // 视频浏览与分类
         if (uri.startsWith("/api/videos")) return true;
         if (uri.startsWith("/api/video-categories")) return true;

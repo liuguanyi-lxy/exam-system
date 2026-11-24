@@ -31,7 +31,8 @@ class TokenUtilTest {
     }
 
     @Test
-    void 生成并校验token() {
+    // 验证 token 能正常生成、校验，并解析用户名、角色和用户 ID
+    void generateAndValidateToken() {
         String token = tokenUtil.generateToken(1L, "admin", "ADMIN");
         assertTrue(tokenUtil.validateToken(token));
         Claims claims = tokenUtil.parseToken(token);
@@ -41,14 +42,16 @@ class TokenUtilTest {
     }
 
     @Test
-    void 篡改的token校验失败() {
+    // 篡改 token 后校验应失败
+    void tamperedTokenFailsValidation() {
         String token = tokenUtil.generateToken(1L, "admin", "ADMIN");
         String tampered = token.substring(0, token.length() - 2) + "xx";
         assertFalse(tokenUtil.validateToken(tampered));
     }
 
     @Test
-    void 过期token校验失败() {
+    // 过期 token 校验应失败
+    void expiredTokenFailsValidation() {
         ReflectionTestUtils.setField(tokenUtil, "expire", 1L);
         String token = tokenUtil.generateToken(1L, "admin", "ADMIN");
         //等token过期
@@ -61,14 +64,16 @@ class TokenUtilTest {
     }
 
     @Test
-    void 空token校验失败() {
+    // 空值或非法格式的 token 校验应失败
+    void emptyOrInvalidTokenFailsValidation() {
         assertFalse(tokenUtil.validateToken(null));
         assertFalse(tokenUtil.validateToken(""));
         assertFalse(tokenUtil.validateToken("not-a-jwt"));
     }
 
     @Test
-    void 密钥不同的token校验失败() {
+    // 使用不同密钥时验证应失败
+    void tokenWithDifferentSecretFailsValidation() {
         String token = tokenUtil.generateToken(1L, "admin", "ADMIN");
         TokenUtil other = new TokenUtil();
         ReflectionTestUtils.setField(other, "secret", "another-secret-key-for-unit-test-0123456789");

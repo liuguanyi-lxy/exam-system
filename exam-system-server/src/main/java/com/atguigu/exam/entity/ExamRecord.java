@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
  */
 @TableName(value ="exam_records")
 @Data
+@EqualsAndHashCode(callSuper = false)
 @Schema(description = "考试记录信息")
 public class ExamRecord extends BaseEntity {
 
@@ -24,6 +26,13 @@ public class ExamRecord extends BaseEntity {
     @Schema(description = "考生用户ID，关联 users 表；历史数据可能为空，空时按 student_name 弱校验",
             example = "1")
     private Long userId; // 考生用户ID
+
+    private Long classId;
+    private Long examClassId;
+    private Integer attemptNo;
+
+    @TableField(exist = false)
+    private String className;
 
     @Schema(description = "考生姓名", 
             example = "张三")
@@ -65,4 +74,4 @@ public class ExamRecord extends BaseEntity {
     @TableField(exist = false)
     private Paper paper; // 试卷信息
 
-} 
+}

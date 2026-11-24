@@ -2,6 +2,7 @@ package com.atguigu.exam.vo;
 
 import lombok.Builder;
 import lombok.Data;
+import lombok.Builder.Default;
 
 import java.io.Serializable;
 import java.util.List;
@@ -25,11 +26,13 @@ public class ChatRequest implements Serializable {
     /**
      * 是否使用流式传输
      */
+    @Default
     private boolean stream = false; // 是否使用流式传输
 
     /**
      * 生成文本的随机性，介于0和1之间
      */
+    @Default
     private double temperature = 0.3; // 温度参数
 
     /**

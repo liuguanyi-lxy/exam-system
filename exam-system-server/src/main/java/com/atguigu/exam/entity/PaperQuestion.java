@@ -2,6 +2,7 @@ package com.atguigu.exam.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
  */
 @TableName(value ="paper_question")
 @Data
+@EqualsAndHashCode(callSuper = false)
 @NoArgsConstructor
 public class PaperQuestion extends BaseEntity {
 

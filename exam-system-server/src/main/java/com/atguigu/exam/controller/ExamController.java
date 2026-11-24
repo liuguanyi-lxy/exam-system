@@ -2,7 +2,11 @@ package com.atguigu.exam.controller;
 
 
 import com.atguigu.exam.common.Result;
+import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.service.ClassScopeService;
+import com.atguigu.exam.service.ExamRecordService;
+import com.atguigu.exam.service.ExamRecordScope;
 import com.atguigu.exam.service.ExamService;
 import com.atguigu.exam.vo.StartExamVo;
 import com.atguigu.exam.vo.SubmitAnswerVo;
@@ -12,6 +16,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -27,14 +32,19 @@ public class ExamController {
 
     @Autowired
     private ExamService examService;
+    @Autowired
+    private ExamRecordService examRecordService;
+    @Autowired
+    private ClassScopeService classScopeService;
     /**
      * 点击开始考试 - 创建新的考试记录
      * @param startExamVo 开始考试请求DTO
      * @return 考试记录
      */
     @PostMapping("/start")  // 处理POST请求
+    @RequireRole("STUDENT")
     @Operation(summary = "开始考试", description = "学生开始考试，创建考试记录（归属当前登录用户），前端再调用查询试卷详情接口才会并返回试卷内容")  // API描述
-    public Result<ExamRecord> startExam(@RequestBody StartExamVo startExamVo,
+    public Result<ExamRecord> startExam(@Valid @RequestBody StartExamVo startExamVo,
             @RequestAttribute("userId") Long userId) {
         ExamRecord examRecord =  examService.startExam(startExamVo, userId);
         log.info("开始考试，考试对象创建成功！{}",examRecord);
@@ -54,6 +64,10 @@ public class ExamController {
             @RequestBody List<SubmitAnswerVo> answers,
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("userRole") String role) {
+            if ("TEACHER".equals(role)) {
+                ExamRecord record = examRecordService.getById(examRecordId);
+                if (record != null) ExamRecordScope.requireTeacherRecord(classScopeService, userId, record);
+            }
             examService.customSubmitAnswer(examRecordId, answers, userId, isTeacherOrAdmin(role));
             log.info("提交答案接口调用成功！");
             return Result.success("答案提交成功");
@@ -69,6 +83,10 @@ public class ExamController {
             @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId,
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("userRole") String role) {
+             if ("TEACHER".equals(role)) {
+                 ExamRecord record = examRecordService.getById(examRecordId);
+                 if (record != null) ExamRecordScope.requireTeacherRecord(classScopeService, userId, record);
+             }
              ExamRecord examRecord = examService.gradeExam(examRecordId, userId, isTeacherOrAdmin(role));
              return Result.success(examRecord, "试卷批阅完成");
     }
@@ -78,4 +96,4 @@ public class ExamController {
         return "ADMIN".equals(role) || "TEACHER".equals(role);
     }
 
-} 
+}

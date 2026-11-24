@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.List;
+import java.util.Collection;
 
 /**
  * 考试记录Service接口
@@ -29,5 +30,6 @@ public interface ExamRecordService extends IService<ExamRecord> {
      * @param limit
      * @return
      */
-    List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit);
-} 
+    List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit, Collection<Long> classIds,
+                                         Collection<Long> userIds, Long selfId);
+}

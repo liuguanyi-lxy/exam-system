@@ -55,7 +55,8 @@ class FavoriteServiceImplTest {
     }
 
     @Test
-    void 收藏列表_size超上限截断为100() {
+    // 收藏列表 size 超上限时截断为 100
+    void favoriteListCapsOversizedPageSizeAt100() {
         Page<QuestionFavoriteVo> page = queryAndCapturePage(1, 99999);
         assertEquals(1L, page.getCurrent());
         assertEquals(100L, page.getSize(), "size=99999 应被截断为上限 100");
@@ -63,20 +64,23 @@ class FavoriteServiceImplTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -5})
-    void 收藏列表_size为非正数回退默认条数(int size) {
+    // 收藏列表 size 为非正数时回退默认条数
+    void favoriteListDefaultsPageSizeForNonPositiveValue(int size) {
         Page<QuestionFavoriteVo> page = queryAndCapturePage(1, size);
         assertEquals(10L, page.getSize(), "非正数 size 应回退默认每页 10 条");
     }
 
     @Test
-    void 收藏列表_分页参数为空时取第一页默认条数() {
+    // 收藏列表分页参数为空时取第一页和默认条数
+    void favoriteListDefaultsPaginationWhenParametersAreMissing() {
         Page<QuestionFavoriteVo> page = queryAndCapturePage(null, null);
         assertEquals(1L, page.getCurrent());
         assertEquals(10L, page.getSize());
     }
 
     @Test
-    void 收藏列表_page超上限截断为10000() {
+    // 收藏列表页码超上限时截断为 10000
+    void favoriteListCapsOversizedPageNumberAt10000() {
         Page<QuestionFavoriteVo> page = queryAndCapturePage(99999, 10);
         assertEquals(10000L, page.getCurrent(), "超大页码应被截断为上限 10000");
         assertEquals(10L, page.getSize());
@@ -84,14 +88,16 @@ class FavoriteServiceImplTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -3})
-    void 收藏列表_page为非正数时取第一页(int pageNo) {
+    // 收藏列表页码为非正数时取第一页
+    void favoriteListDefaultsToFirstPageForNonPositiveNumber(int pageNo) {
         Page<QuestionFavoriteVo> page = queryAndCapturePage(pageNo, 10);
         assertEquals(1L, page.getCurrent(), "非正数页码应回退到第 1 页");
         assertEquals(10L, page.getSize());
     }
 
     @Test
-    void 首次收藏_写入一条收藏记录() {
+    // 首次收藏应写入一条收藏记录
+    void firstFavoriteInsertsOneRecord() {
         when(questionMapper.selectById(QUESTION_ID)).thenReturn(new Question());
         when(favoriteMapper.selectCount(any())).thenReturn(0L);
         when(favoriteMapper.insert(any(QuestionFavorite.class))).thenReturn(1);
@@ -105,7 +111,8 @@ class FavoriteServiceImplTest {
     }
 
     @Test
-    void 重复收藏_幂等返回且不重复插入() {
+    // 重复收藏应幂等返回且不重复插入
+    void repeatedFavoriteDoesNotInsertDuplicate() {
         when(questionMapper.selectById(QUESTION_ID)).thenReturn(new Question());
         when(favoriteMapper.selectCount(any())).thenReturn(1L);
 
@@ -115,7 +122,8 @@ class FavoriteServiceImplTest {
     }
 
     @Test
-    void 并发收藏撞唯一索引_吞掉异常按幂等成功() {
+    // 并发收藏撞唯一索引时按幂等成功处理
+    void concurrentFavoriteDuplicateKeyIsTreatedAsSuccess() {
         when(questionMapper.selectById(QUESTION_ID)).thenReturn(new Question());
         when(favoriteMapper.selectCount(any())).thenReturn(0L);
         // 模拟并发窗口：两个请求都通过判存，后到者撞 (user_id, question_id) 唯一索引
@@ -128,7 +136,8 @@ class FavoriteServiceImplTest {
     }
 
     @Test
-    void 取消不存在的收藏_幂等成功() {
+    // 取消不存在的收藏应幂等成功
+    void removingMissingFavoriteIsSuccessful() {
         when(favoriteMapper.delete(any())).thenReturn(0);
 
         assertDoesNotThrow(() -> favoriteService.removeFavorite(STUDENT_ID, QUESTION_ID),
@@ -137,7 +146,8 @@ class FavoriteServiceImplTest {
     }
 
     @Test
-    void 收藏不存在的题目_抛题目不存在() {
+    // 收藏不存在的题目应抛题目不存在异常
+    void favoriteRejectsMissingQuestion() {
         // questionMapper.selectById 默认返回 null，表示题目不存在或已逻辑删除
         RuntimeException exception = assertThrows(RuntimeException.class,
                 () -> favoriteService.addFavorite(STUDENT_ID, QUESTION_ID));
@@ -148,7 +158,8 @@ class FavoriteServiceImplTest {
     }
 
     @Test
-    void 收藏题目ID为空_抛参数错误() {
+    // 收藏题目 ID 为空时抛参数错误
+    void favoriteRejectsNullQuestionId() {
         RuntimeException exception = assertThrows(RuntimeException.class,
                 () -> favoriteService.addFavorite(STUDENT_ID, null));
 

@@ -3,12 +3,14 @@ package com.atguigu.exam.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 试卷实体类
  * 对应数据库exams表
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("exams")
 public class Exam extends BaseEntity {
     

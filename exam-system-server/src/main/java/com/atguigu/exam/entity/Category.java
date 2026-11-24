@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.util.List;
 
@@ -11,6 +12,7 @@ import java.util.List;
  * 题目分类实体类
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("categories")
 @Schema(description = "题目分类信息")
 public class Category extends BaseEntity {
