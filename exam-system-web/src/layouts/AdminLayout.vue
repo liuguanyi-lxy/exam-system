@@ -44,6 +44,10 @@
           <el-menu-item index="/admin/classes">班级列表</el-menu-item>
           <el-menu-item index="/admin/knowledge-points">知识点</el-menu-item>
         </el-sub-menu>
+        <el-menu-item index="/admin/courses">
+          <el-icon><Reading /></el-icon>
+          <span>课程管理</span>
+        </el-menu-item>
         <el-menu-item index="/admin/exam-records">
           <el-icon><DataAnalysis /></el-icon>
           <span>考试记录</span>

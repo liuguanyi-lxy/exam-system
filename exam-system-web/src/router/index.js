@@ -232,6 +232,12 @@ const routes = [
         meta: { title: '班级详情' },
       },
       {
+        path: 'courses',
+        name: 'CourseManage',
+        component: () => import('@/views/course/CourseManage.vue'),
+        meta: { title: '课程管理' },
+      },
+      {
         path: 'knowledge-points',
         name: 'KnowledgePointManage',
         component: () => import('@/views/knowledge-point/KnowledgePointManage.vue'),

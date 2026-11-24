@@ -119,7 +119,7 @@
 
 ## 4. 课程管理接口
 
-> 除 4.6（状态查询）外，教师角色一律要求"创建者本人"，否则 `ClassScopeException`（HTTP 403，文案"无权访问该课程"）。
+> 4.1、4.6 按可见范围查询；创建课程后，修改、发布、删除和替换分配仅允许管理员或创建教师。越权返回 HTTP 403。
 
 ### 4.1 分页查询课程列表
 
@@ -145,7 +145,7 @@
 | creatorName | String | 创建者姓名（join `users`） |
 | createdBy | Long | 创建者 userId |
 | chapterCount | Integer | 章节数 |
-| classCount | Integer | 已分配班级数 |
+| classCount | Integer | 已分配班级数；教师仅统计本人负责的班级 |
 | createdAt / updatedAt | String | `yyyy-MM-dd HH:mm:ss` |
 
 **响应示例：**
@@ -201,7 +201,7 @@
 
 **DELETE `/api/courses/{id}`**
 
-逻辑删除课程，级联逻辑删除其章节与 chapter_videos（`course_classes` 分配关系一并清除）。**学员的 `learning_video_progress` 保留不清**（历史学习数据是真实记录，重开同名课程不复用）。删除前不校验是否有学习进度，确认动作由前端弹窗承担（决策表 #9）。
+逻辑删除课程及其章节，物理删除 `chapter_videos` 和 `course_classes` 关系。**学员的 `learning_video_progress` 保留不清**；它按学员和视频记录，复用同一视频时已有的视频学习历史仍有效。删除前不校验是否有学习进度，确认动作由前端弹窗承担（决策表 #9）。
 
 ### 4.6 查询课程已分配班级
 
