@@ -251,10 +251,11 @@
 
 **GET `/api/courses/{courseId}/chapters`**
 
-**响应 `data`（数组，按 sort 升序）：**
+**响应 `data`（含课程与按 sort 升序的章节；每章附 `videos`，字段见 6.1）：**
 
 ```json
 {
+  "course": { "id": 1, "name": "Java 入门", "createdBy": 3, "status": "DRAFT" },
   "chapters": [
     {
       "id": 1, "courseId": 1, "title": "第一章 环境搭建", "description": "JDK 安装与 IDE",
@@ -280,7 +281,7 @@
 
 **DELETE `/api/chapters/{id}`**
 
-逻辑删除章节并级联逻辑删除其 chapter_videos。学员相关 `learning_video_progress` 保留（按 user+video 唯一，与章节解耦，重挂同视频不产生脏数据）。
+逻辑删除章节并物理删除其 `chapter_videos`。学员相关 `learning_video_progress` 保留（按 user+video 唯一，与章节解耦，重挂同视频不产生脏数据）。
 
 ### 5.5 章节排序上移/下移
 
@@ -345,7 +346,7 @@
 
 - `EXIST`：插入 `chapter_videos` 关联行；同一章节重复添加同一视频 → `{code:500, message:"该视频已在本章节中"}`（唯一索引兜底，不幂等——重复无业务意义）；
 - `EXTERNAL`：后端**代建** `videos` 记录（`source_type=1`、`file_url=externalUrl`、`status=1` 已发布、`uploader_type=2`、`uploader_name=当前用户姓名`、`duration=null`），再插关联行；
-- **外链白名单**：配置项 `learning.external-video.allowed-domains`（application.yaml 列表）。**默认允许主流视频站**（bilibili.com、iqiyi.com、youku.com、v.qq.com、douyin.com）；配置为空 = 不限制（单机构场景宽松起步）。校验只匹配域名后缀（`www.bilibili.com` 命中 `bilibili.com`）；不在白名单 → `{code:500, message:"不支持的视频链接域名"}`；
+- **外链白名单**：配置项 `learning.external-video.allowed-domains`。默认允许 bilibili.com、iqiyi.com、youku.com、v.qq.com、douyin.com 及其子域；空白名单不允许外链。既有外链关联时也执行同样校验；仅接受不含凭据、使用默认端口的 HTTP(S) 链接。
 - **新上传站内视频不走本接口**：指引教师先到视频中心上传（`POST /api/admin/videos`，既有 TEACHER/ADMIN 接口），再回来 `EXIST` 选取（决策表 #3）。
 
 **响应：** 返回新建的章节视频对象（字段同 6.1 元素）。
@@ -358,7 +359,6 @@
 
 | 字段 | 类型 | 必填 | 校验 |
 | --- | --- | --- | --- |
-| title | String | 是 | 外链视频可改标题（同步更新 videos.title）；站内视频改标题时提示将影响视频中心展示 |
 | required | Boolean | 是 | 必学标记 |
 | completionRatio | Integer | 是 | 1–100 |
 
@@ -629,7 +629,7 @@
 
 1. **`courses`**：`name, description, cover_url, status(DRAFT/PUBLISHED), created_by(→users.id)` + BaseEntity；逻辑删除。`created_by` 是教师可编辑性的唯一依据（1 节语义），**必须落库**。
 2. **`course_chapters`**：`(course_id, title, description, sort)`；逻辑删除；查询按 `sort` 升序。建议 `(course_id, sort)` 索引。
-3. **`chapter_videos`**：`(chapter_id, video_id)` **唯一索引**（防重复添加）、`required, completion_ratio(default 70), sort`；逻辑删除。`(chapter_id, sort)` 索引支撑排序与列表。
+3. **`chapter_videos`**：`(chapter_id, video_id)` **唯一索引**（防重复添加）、`required, completion_ratio(default 70), sort`；物理删除，避免阻挡重新添加。按章节查询使用唯一索引前缀。
 4. **`learning_video_progress`**：`(user_id, video_id)` **唯一索引**（规格明文：按 user+video 唯一，重挂同章节不产生脏数据）、`chapter_video_id, status(IN_PROGRESS/COMPLETED), watched_seconds, session_id(当前活跃会话), completed_at`；**不逻辑删除**（学习历史保留，课程/章节删除不清）。`completed_at` 是错题本/诊断类功能未来关联"学过什么"的锚点。
 5. **`course_classes`**（M1 已建）：本契约按 `(course_id, class_id)` 整体替换语义读写；唯一索引 `(course_id, class_id)`；`assigned_at` 建议记录首次分配时间（4.6 回显）。
 6. **派生计算**：章节完成、课程进度、7.1/7.2/8.1 的聚合一律**查询时实时计算**，不建章节完成表、不写冗余计数列（单班 ≤百人、章节 ≤几十，聚合成本可接受；冗余列要维护一致性，收益为零）。8.1 全班聚合请评估单条聚合 SQL（`class_members` join `learning_video_progress` group by user），避免 N+1。

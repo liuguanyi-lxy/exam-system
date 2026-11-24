@@ -215,7 +215,7 @@ GROUP BY p.user_id;
 
 ### 7.3 外链白名单
 
-`ExternalVideoPolicy`（`@Component`）：配置键 `learning.external-video.allowed-domains`（List<String>），默认 `bilibili.com / iqiyi.com / youku.com / v.qq.com / douyin.com`；配置为空 = 不限制；校验只匹配域名后缀（`www.bilibili.com` 命中 `bilibili.com`）；不在白名单 → `"不支持的视频链接域名"`。独立成类供 6.2 与未来 M5"推荐补课视频"复用（契约 11.8）。
+`ExternalVideoPolicy`（`@Component`）：配置键 `learning.external-video.allowed-domains`（List<String>），默认 `bilibili.com / iqiyi.com / youku.com / v.qq.com / douyin.com`；空配置拒绝外链。按域名标签边界匹配根域和子域，不匹配相似字符串；在新建或挂载已有外链时均校验。独立成类供 6.2 与未来 M5 推荐补课视频复用。
 
 ## 8. 课程-班级分配接线（PUT 整体替换）
 

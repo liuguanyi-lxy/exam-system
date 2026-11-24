@@ -238,6 +238,12 @@ const routes = [
         meta: { title: '课程管理' },
       },
       {
+        path: 'courses/:id',
+        name: 'CourseChapters',
+        component: () => import('@/views/course/CourseChapters.vue'),
+        meta: { title: '课程内容' },
+      },
+      {
         path: 'knowledge-points',
         name: 'KnowledgePointManage',
         component: () => import('@/views/knowledge-point/KnowledgePointManage.vue'),

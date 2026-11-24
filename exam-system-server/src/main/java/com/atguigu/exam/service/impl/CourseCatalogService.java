@@ -98,8 +98,15 @@ public class CourseCatalogService {
     }
 
     public Course requireEditable(Long courseId, Long userId, String role) {
+        return requireOwner(courseMapper.lockForAssignment(courseId), userId, role);
+    }
+
+    public Course readEditable(Long courseId, Long userId, String role) {
+        return requireOwner(courseMapper.selectById(courseId), userId, role);
+    }
+
+    private Course requireOwner(Course course, Long userId, String role) {
         boolean admin = isAdmin(role);
-        Course course = courseMapper.lockForAssignment(courseId);
         if (course == null) throw new IllegalArgumentException("课程不存在");
         if (!admin && !Objects.equals(course.getCreatedBy(), userId)) {
             throw new ClassScopeException("无权访问该课程");

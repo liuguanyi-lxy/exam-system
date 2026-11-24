@@ -37,7 +37,8 @@
             </el-image>
             <div v-else class="course-thumb thumb-placeholder"><el-icon><Reading /></el-icon></div>
             <div>
-              <strong>{{ row.name }}</strong>
+              <el-link v-if="canEdit(row)" type="primary" :underline="false" @click="goEdit(row)">{{ row.name }}</el-link>
+              <strong v-else>{{ row.name }}</strong>
               <p class="muted line-clamp">{{ row.description || '暂无课程简介' }}</p>
             </div>
           </div>
@@ -158,6 +159,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Plus, Reading } from '@element-plus/icons-vue'
 import { getClassList } from '@/api/classManage'
@@ -168,6 +170,7 @@ import {
 } from '@/api/course'
 
 const userStore = useUserStore()
+const router = useRouter()
 const loading = ref(false)
 const courses = ref([])
 const page = ref(1)
@@ -269,6 +272,10 @@ async function saveCourse() {
 
 function canEdit(course) {
   return !!course && (userStore.role === 'ADMIN' || String(course.createdBy) === String(userStore.userId))
+}
+
+function goEdit(course) {
+  router.push(`/admin/courses/${course.id}`)
 }
 
 async function handleCourseCommand(command, course) {
