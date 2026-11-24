@@ -5,9 +5,10 @@ import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Question;
 import com.atguigu.exam.service.QuestionService;
 import com.atguigu.exam.utils.QuestionSanitizer;
+import com.atguigu.exam.vo.KnowledgePointItemVo;
+import com.atguigu.exam.vo.QuestionKnowledgePointResultVo;
+import com.atguigu.exam.vo.QuestionKnowledgePointVo;
 import com.atguigu.exam.vo.QuestionPageVo;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -65,16 +66,18 @@ public class QuestionController {
      * @param difficulty 题目难度，可选参数，用于筛选题目
      * @param type 题目类型，可选参数，用于筛选题目
      * @param keyword 关键词，可选参数，用于筛选题目
+     * @param knowledgePointId 知识点ID，可选参数，非数字或不存在时忽略
      * @return 封装的分页查询结果，包含题目列表和分页信息
      */
     @GetMapping("/list")  // 映射GET请求到/api/questions/list
-    @Operation(summary = "分页查询题目列表", description = "支持按分类、难度、题型、关键词进行多条件筛选的分页查询")  // Swagger接口描述
+    @Operation(summary = "分页查询题目列表", description = "支持按分类、难度、题型、关键词、知识点筛选")
     public Result<Page<Question>> getQuestionList(
             @Parameter(description = "当前页码，从1开始", example = "1") @RequestParam(defaultValue = "1") Integer page,  // 参数描述
             @Parameter(description = "每页显示数量", example = "10") @RequestParam(defaultValue = "10") Integer size,
             @Parameter(description = "查询的题目分类ID", example = "101") @RequestParam(required = false) Long categoryId,
             @Parameter(description = "查询的题目难度", example = "EASY") @RequestParam(required = false) String difficulty,
             @Parameter(description = "查询的题目类型", example = "CHOICE") @RequestParam(required = false) String type,
+            @Parameter(description = "知识点ID", example = "1") @RequestParam(required = false) String knowledgePointId,
             @Parameter(description = "查询的题目关键词", example = "JAVA") @RequestParam(required = false) String keyword,
             jakarta.servlet.http.HttpServletRequest request
             ){
@@ -84,6 +87,7 @@ public class QuestionController {
         questionPageVo.setDifficulty(difficulty);
         questionPageVo.setType(type);
         questionPageVo.setKeyword(keyword);
+        questionPageVo.setKnowledgePointId(parseKnowledgePointId(knowledgePointId));
         // 创建分页对象
         Page<Question> questionPage = new Page<>(page, size);
         // TODO: 调用Service层进行分页查询，并返回结果给questionPage
@@ -166,6 +170,19 @@ public class QuestionController {
         return Result.success(question);
     }
     
+    @RequireRole({"TEACHER", "ADMIN"})
+    @PutMapping("/{id}/knowledge-points")
+    @Operation(summary = "设置题目知识点", description = "整体替换题目知识点集合，空数组清空标注")
+    public Result<QuestionKnowledgePointResultVo> setQuestionKnowledgePoints(
+            @PathVariable Long id,
+            @RequestBody QuestionKnowledgePointVo body,
+            jakarta.servlet.http.HttpServletRequest request) {
+        Long operatorId = (Long) request.getAttribute("userId");
+        List<KnowledgePointItemVo> knowledgePoints = questionService.replaceQuestionKnowledgePoints(
+                id, body.getKnowledgePointIds(), operatorId);
+        return Result.success(new QuestionKnowledgePointResultVo(id, knowledgePoints), "标注已保存");
+    }
+
     /**
      * 删除题目
      * 
@@ -319,6 +336,17 @@ public class QuestionController {
         return Result.success(count, "热门题目缓存刷新成功");
     }
 
+
+    private Long parseKnowledgePointId(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
 
     /** 当前请求是否来自教师/管理员 */
     private boolean isTeacherOrAdmin(jakarta.servlet.http.HttpServletRequest request) {

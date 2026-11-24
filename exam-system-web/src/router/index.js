@@ -101,6 +101,18 @@ const routes = [
         component: () => import('@/views/exam-record/ExamRanking.vue'),
         meta: { title: '成绩排行榜' },
       },
+      {
+        path: 'my/classes',
+        name: 'MyClasses',
+        component: () => import('@/views/my/MyClasses.vue'),
+        meta: { title: '我的班级', requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
+        path: 'my/classes/:id',
+        name: 'MyClassDetail',
+        component: () => import('@/views/my/MyClassDetail.vue'),
+        meta: { title: '班级详情', requiresAuth: true, roles: ['STUDENT'] },
+      },
     ],
   },
 
@@ -206,6 +218,24 @@ const routes = [
         name: 'VideoCategoryManage',
         component: () => import('@/views/video-category/VideoCategoryManage.vue'),
         meta: { title: '视频分类' },
+      },
+      {
+        path: 'classes',
+        name: 'ClassList',
+        component: () => import('@/views/class/ClassList.vue'),
+        meta: { title: '班级列表' },
+      },
+      {
+        path: 'classes/:id',
+        name: 'ClassDetail',
+        component: () => import('@/views/class/ClassDetail.vue'),
+        meta: { title: '班级详情' },
+      },
+      {
+        path: 'knowledge-points',
+        name: 'KnowledgePointManage',
+        component: () => import('@/views/knowledge-point/KnowledgePointManage.vue'),
+        meta: { title: '知识点管理' },
       },
     ],
   },

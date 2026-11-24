@@ -22,5 +22,7 @@ public interface ExamRecordMapper extends BaseMapper<ExamRecord> {
      * @param limit   查询条数限制
      * @return 考试排行榜信息列表
      * */
-    List<ExamRankingVO> customQueryRanking(@Param("paperId") Integer paperId,@Param("limit") Integer limit);
+    List<ExamRankingVO> customQueryRanking(@Param("paperId") Integer paperId,
+                                           @Param("limit") Integer limit,
+                                           @Param("userIds") java.util.Collection<Long> userIds);
 }

@@ -16,6 +16,12 @@
         <if test="paperId != null">
             and pr.id=#{paperId}
         </if>
+        <if test="userIds != null">
+            and er.user_id in
+            <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+                #{userId}
+            </foreach>
+        </if>
         order by er.score desc , duration asc
         <if test="limit != null">
             limit #{limit};

@@ -32,6 +32,11 @@
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
       </el-form-item>
+      <el-form-item label="知识点">
+        <el-select v-model="form.knowledgePointIds" multiple filterable clearable placeholder="选择知识点（可多选）" style="width:100%">
+          <el-option v-for="k in knowledgePoints" :key="k.id" :label="k.name" :value="k.id" />
+        </el-select>
+      </el-form-item>
 
       <!-- 选择题选项编辑 -->
       <template v-if="form.type === 'CHOICE'">
@@ -82,6 +87,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getQuestionById, createQuestion, updateQuestion } from '@/api/question'
 import { getCategories } from '@/api/category'
+import { getAllKnowledgePoints } from '@/api/knowledgePoint'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,6 +95,7 @@ const formRef = ref()
 const saving = ref(false)
 const pageLoading = ref(false)
 const categories = ref([])
+const knowledgePoints = ref([])
 const isEdit = computed(() => !!route.params.id)
 
 const answerText = ref('')
@@ -100,6 +107,7 @@ const form = reactive({
   type: 'CHOICE',
   multi: false,
   categoryId: null,
+  knowledgePointIds: [],
   difficulty: 'EASY',
   score: 5,
   analysis: '',
@@ -137,14 +145,20 @@ async function handleSave() {
   saving.value = true
   try {
     const data = buildSubmitData()
-    if (isEdit.value) { await updateQuestion(form.id, data); ElMessage.success('更新成功') }
-    else { await createQuestion(data); ElMessage.success('创建成功') }
+    if (isEdit.value) {
+      await updateQuestion(form.id, data)
+      ElMessage.success('更新成功')
+    } else {
+      await createQuestion(data)
+      ElMessage.success('创建成功')
+    }
     router.push('/admin/questions')
   } finally { saving.value = false }
 }
 
 onMounted(async () => {
   try { categories.value = await getCategories() || []; } catch {}
+  try { knowledgePoints.value = await getAllKnowledgePoints() || []; } catch {}
   if (isEdit.value) {
     pageLoading.value = true
     try {
@@ -153,6 +167,7 @@ onMounted(async () => {
         Object.assign(form, {
           id: q.id, title: q.title, type: q.type, multi: q.multi || false,
           categoryId: q.categoryId, difficulty: q.difficulty, score: q.score, analysis: q.analysis || '',
+          knowledgePointIds: q.knowledgePoints?.map(kp => kp.id) || [],
           choices: q.choices?.length ? q.choices.map(c => ({ content: c.content, isCorrect: c.isCorrect, sort: c.sort })) : [],
         })
         if (q.answer) {

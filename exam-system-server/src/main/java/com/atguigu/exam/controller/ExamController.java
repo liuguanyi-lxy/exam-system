@@ -3,6 +3,9 @@ package com.atguigu.exam.controller;
 
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.exception.ClassScopeException;
+import com.atguigu.exam.service.ClassScopeService;
+import com.atguigu.exam.service.ExamRecordService;
 import com.atguigu.exam.service.ExamService;
 import com.atguigu.exam.vo.StartExamVo;
 import com.atguigu.exam.vo.SubmitAnswerVo;
@@ -27,6 +30,10 @@ public class ExamController {
 
     @Autowired
     private ExamService examService;
+    @Autowired
+    private ExamRecordService examRecordService;
+    @Autowired
+    private ClassScopeService classScopeService;
     /**
      * 点击开始考试 - 创建新的考试记录
      * @param startExamVo 开始考试请求DTO
@@ -69,6 +76,14 @@ public class ExamController {
             @Parameter(description = "考试记录ID") @PathVariable Integer examRecordId,
             @RequestAttribute("userId") Long userId,
             @RequestAttribute("userRole") String role) {
+             if ("TEACHER".equals(role)) {
+                 ExamRecord record = examRecordService.getById(examRecordId);
+                 if (record != null && (record.getUserId() == null
+                         || !classScopeService.getStudentUserIds(classScopeService.getTeacherClassIds(userId))
+                         .contains(record.getUserId()))) {
+                     throw new ClassScopeException("无权对该考试记录进行判卷");
+                 }
+             }
              ExamRecord examRecord = examService.gradeExam(examRecordId, userId, isTeacherOrAdmin(role));
              return Result.success(examRecord, "试卷批阅完成");
     }
@@ -78,4 +93,4 @@ public class ExamController {
         return "ADMIN".equals(role) || "TEACHER".equals(role);
     }
 
-} 
+}

@@ -13,4 +13,9 @@ public interface StatsService {
      * @return 统计数据DTO
      */
     StatsVo getSystemStats();
-} 
+
+    /** 获取按当前角色数据范围过滤的系统统计数据。 */
+    StatsVo getSystemStats(String role, Long userId);
+
+    void checkDatabaseConnection();
+}

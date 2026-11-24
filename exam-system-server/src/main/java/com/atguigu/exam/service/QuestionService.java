@@ -1,6 +1,7 @@
 package com.atguigu.exam.service;
 
 import com.atguigu.exam.entity.Question;
+import com.atguigu.exam.vo.KnowledgePointItemVo;
 import com.atguigu.exam.vo.QuestionImportVo;
 import com.atguigu.exam.vo.QuestionPageVo;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -45,8 +46,12 @@ public interface QuestionService extends IService<Question> {
     Question customDetailQuestion(Long id);
     // 自定义保存题目信息
     void customSaveQuestion(Question question);
+    void customSaveQuestion(Question question, Long operatorId);
     // 自定义更新题目信息
     void customUpdateQuestion(Question question);
+    void customUpdateQuestion(Question question, Long operatorId);
+    // 独立替换接口要求传入列表；空列表清空标注。
+    List<KnowledgePointItemVo> replaceQuestionKnowledgePoints(Long questionId, List<Long> knowledgePointIds, Long operatorId);
     // 自定义根据ID删除题目
     void customRemoveQuestionById(Long id);
 

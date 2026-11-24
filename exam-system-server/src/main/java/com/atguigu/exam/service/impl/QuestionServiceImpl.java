@@ -5,15 +5,21 @@ import com.atguigu.exam.entity.PaperQuestion;
 import com.atguigu.exam.entity.Question;
 import com.atguigu.exam.entity.QuestionAnswer;
 import com.atguigu.exam.entity.QuestionChoice;
+import com.atguigu.exam.entity.KnowledgePoint;
+import com.atguigu.exam.entity.QuestionKnowledgePoint;
+import com.atguigu.exam.mapper.KnowledgePointMapper;
+import com.atguigu.exam.mapper.QuestionKnowledgePointMapper;
 import com.atguigu.exam.mapper.PaperQuestionMapper;
 import com.atguigu.exam.mapper.QuestionAnswerMapper;
 import com.atguigu.exam.mapper.QuestionChoiceMapper;
 import com.atguigu.exam.mapper.QuestionMapper;
+import com.atguigu.exam.service.KnowledgePointService;
 import com.atguigu.exam.service.QuestionService;
 import com.atguigu.exam.utils.ExcelUtil;
 import com.atguigu.exam.utils.RedisUtils;
 import com.atguigu.exam.vo.QuestionImportVo;
 import com.atguigu.exam.vo.QuestionPageVo;
+import com.atguigu.exam.vo.KnowledgePointItemVo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -47,6 +53,12 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     @Autowired
     private QuestionMapper questionMapper;
     @Autowired
+    private KnowledgePointService knowledgePointService;
+    @Autowired
+    private KnowledgePointMapper knowledgePointMapper;
+    @Autowired
+    private QuestionKnowledgePointMapper questionKnowledgePointMapper;
+    @Autowired
     private RedisUtils redisUtils;
     @Autowired
     private PaperQuestionMapper paperQuestionMapper;
@@ -67,6 +79,20 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         boolean hasDifficulty = !ObjectUtils.isEmpty(questionPageVo.getDifficulty());
         boolean hasType = !ObjectUtils.isEmpty(questionPageVo.getType());
         boolean hasKeyword = !ObjectUtils.isEmpty(questionPageVo.getKeyword());
+        Long knowledgePointId = questionPageVo.getKnowledgePointId();
+        if (knowledgePointId != null && knowledgePointMapper.selectById(knowledgePointId) != null) {
+            List<Long> questionIds = questionKnowledgePointMapper.selectList(
+                            new LambdaQueryWrapper<QuestionKnowledgePoint>()
+                                    .select(QuestionKnowledgePoint::getQuestionId)
+                                    .eq(QuestionKnowledgePoint::getKnowledgePointId, knowledgePointId))
+                    .stream().map(QuestionKnowledgePoint::getQuestionId).toList();
+            if (questionIds.isEmpty()) {
+                questionPage.setRecords(List.of());
+                questionPage.setTotal(0);
+                return;
+            }
+            questionLambdaQueryWrapper.in(Question::getId, questionIds);
+        }
         // 根据传入的参数，添加查询条件
         questionLambdaQueryWrapper.eq(hasCategoryId, Question::getCategoryId, questionPageVo.getCategoryId());
         questionLambdaQueryWrapper.eq(hasDifficulty, Question::getDifficulty, questionPageVo.getDifficulty());
@@ -79,6 +105,7 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         //查询结果question列表会添加到questionPage对象中，然后再进行question对象中选项和答案属性的填充
         List<Question> questionList = questionPage.getRecords();
         fillQuestionChoiceAndAnswer(questionList);
+        fillQuestionKnowledgePoints(questionList);
     }
 
     @Override
@@ -86,8 +113,9 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         //查询题目详情
         Question question = questionMapper.customGetById(id);
         if(question== null){
-            throw new RuntimeException("查询题目详情失败,题目可能被提前删除");
+            throw new RuntimeException("题目不存在");
         }
+        fillQuestionKnowledgePoints(List.of(question));
         //查询题目详情一次就需要对其进行一次热题更新，根据访问题目次数进行排序
         /*不阻塞主流程
         用户查询题目详情是主要需求，必须快速返回
@@ -98,9 +126,14 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         return question;
     }
     @Transactional(rollbackFor = Exception.class)
-    //自定义保存题目
     @Override
     public void customSaveQuestion(Question question) {
+        customSaveQuestion(question, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void customSaveQuestion(Question question, Long operatorId) {
         //插入前端传入的题目信息
         //同一类型下的题目名称不应该相同
         LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
@@ -149,11 +182,18 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         }
         //保存答案对象
         questionAnswerMapper.insert(answer);
+        saveQuestionKnowledgePoints(question, operatorId);
     }
     //自定义修改题目及其答案选项信息
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void customUpdateQuestion(Question question) {
+        customUpdateQuestion(question, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void customUpdateQuestion(Question question, Long operatorId) {
         //题目的校验,题目不同id名称不能相同
         LambdaQueryWrapper<Question> questionLambdaQueryWrapper = new LambdaQueryWrapper<>();
         questionLambdaQueryWrapper.eq(Question::getTitle, question.getTitle());
@@ -214,7 +254,68 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         } else {
             questionAnswerMapper.insert(answer);
         }
+        saveQuestionKnowledgePoints(question, operatorId);
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<KnowledgePointItemVo> replaceQuestionKnowledgePoints(Long questionId, List<Long> knowledgePointIds,
+                                                                     Long operatorId) {
+        if (knowledgePointIds == null) {
+            throw new IllegalArgumentException("knowledgePointIds 必填");
+        }
+        // 与题目更新共用题目行锁，串行化同一道题的标注写入。
+        if (questionMapper.lockActiveQuestion(questionId) == null) {
+            throw new IllegalArgumentException("题目不存在");
+        }
+        return replaceLockedQuestionKnowledgePoints(questionId, knowledgePointIds, operatorId);
+    }
+
+    private void saveQuestionKnowledgePoints(Question question, Long operatorId) {
+        List<Long> ids = question.getKnowledgePointIds();
+        if (ids != null) {
+            // 题目已在当前事务内写入，持有题目行锁。
+            question.setKnowledgePoints(replaceLockedQuestionKnowledgePoints(question.getId(), ids, operatorId));
+        }
+    }
+
+    private List<KnowledgePointItemVo> replaceLockedQuestionKnowledgePoints(Long questionId, List<Long> ids,
+                                                                            Long operatorId) {
+        Set<Long> targetIds = new LinkedHashSet<>(ids);
+        if (targetIds.contains(null)) {
+            throw new IllegalArgumentException("知识点不存在");
+        }
+        List<KnowledgePoint> points = targetIds.isEmpty() ? List.of() : knowledgePointMapper.selectBatchIds(targetIds);
+        if (points.size() != targetIds.size()) {
+            throw new IllegalArgumentException("知识点不存在");
+        }
+
+        // 用当前读获取关联；题目写入前的查重可能已经建立了旧快照。
+        Set<Long> currentIds = questionKnowledgePointMapper.selectList(new LambdaQueryWrapper<QuestionKnowledgePoint>()
+                        .select(QuestionKnowledgePoint::getKnowledgePointId)
+                        .eq(QuestionKnowledgePoint::getQuestionId, questionId)
+                        .last("FOR UPDATE"))
+                .stream().map(QuestionKnowledgePoint::getKnowledgePointId).collect(Collectors.toSet());
+        List<Long> removedIds = currentIds.stream().filter(id -> !targetIds.contains(id)).toList();
+        if (!removedIds.isEmpty()) {
+            questionKnowledgePointMapper.delete(new LambdaQueryWrapper<QuestionKnowledgePoint>()
+                    .eq(QuestionKnowledgePoint::getQuestionId, questionId)
+                    .in(QuestionKnowledgePoint::getKnowledgePointId, removedIds));
+        }
+        List<Long> addedIds = targetIds.stream().filter(id -> !currentIds.contains(id)).toList();
+        if (!addedIds.isEmpty()) {
+            questionKnowledgePointMapper.insertLinks(questionId, addedIds, operatorId);
+        }
+        if (!removedIds.isEmpty() || !addedIds.isEmpty()) {
+            log.info("题目知识点更新：questionId={}，新增={}，移除={}，操作人={}",
+                    questionId, addedIds.size(), removedIds.size(), operatorId);
+        }
+        return points.stream()
+                .sorted(Comparator.comparing(KnowledgePoint::getSort).thenComparing(KnowledgePoint::getId))
+                .map(point -> new KnowledgePointItemVo(point.getId(), point.getName(), point.getSort()))
+                .toList();
+    }
+
     //自定义删除题目信息
     @Override
     @Transactional
@@ -437,6 +538,17 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         } catch (Exception e) {
             // Redis 不可用时静默降级，不影响题目详情查询
             log.warn("Redis 访问计数失败（已忽略）：{}", e.getMessage());
+        }
+    }
+
+    private void fillQuestionKnowledgePoints(List<Question> questions) {
+        if (questions.isEmpty()) {
+            return;
+        }
+        List<Long> questionIds = questions.stream().map(Question::getId).toList();
+        Map<Long, List<KnowledgePointItemVo>> pointsByQuestion = knowledgePointService.getQuestionKnowledgePoints(questionIds);
+        for (Question question : questions) {
+            question.setKnowledgePoints(pointsByQuestion.getOrDefault(question.getId(), List.of()));
         }
     }
 

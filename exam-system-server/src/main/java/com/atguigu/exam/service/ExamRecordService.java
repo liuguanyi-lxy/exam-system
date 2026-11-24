@@ -29,5 +29,5 @@ public interface ExamRecordService extends IService<ExamRecord> {
      * @param limit
      * @return
      */
-    List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit);
-} 
+    List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit, java.util.Collection<Long> userIds);
+}

@@ -2,6 +2,7 @@ package com.atguigu.exam.service.impl;
 
 import com.atguigu.exam.entity.ExamRecord;
 import com.atguigu.exam.mapper.*;
+import com.atguigu.exam.service.ClassScopeService;
 import com.atguigu.exam.service.StatsService;
 import com.atguigu.exam.vo.StatsVo;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -35,9 +36,23 @@ public class StatsServiceImpl implements StatsService {
     @Autowired
     private PaperMapper paperMapper;  // 试卷Mapper
 
+    @Autowired
+    private ClassScopeService classScopeService;
+
     @Override
     public StatsVo getSystemStats() {
+        return getSystemStats(null, null);
+    }
+
+    @Override
+    public StatsVo getSystemStats(String role, Long userId) {
         StatsVo stats = new StatsVo();
+        java.util.Set<Long> teacherVisibleStudentIds = null;
+        if ("TEACHER".equals(role)) {
+            teacherVisibleStudentIds = userId == null
+                    ? java.util.Collections.emptySet()
+                    : classScopeService.getStudentUserIds(classScopeService.getTeacherClassIds(userId));
+        }
         
         try {
             // 统计题目总数  // 查询题目数量
@@ -50,8 +65,19 @@ public class StatsServiceImpl implements StatsService {
         }
         
         try {
-            // 统计用户总数  // 查询用户数量
-            Long userCount = userMapper.selectCount(new QueryWrapper<>());
+            // 教师只统计负责班级中的学员；管理员保持全量统计
+            Long userCount;
+            if (teacherVisibleStudentIds == null) {
+                userCount = userMapper.selectCount(new QueryWrapper<>());
+            } else {
+                QueryWrapper<com.atguigu.exam.entity.User> userQuery = new QueryWrapper<>();
+                if (teacherVisibleStudentIds.isEmpty()) {
+                    userQuery.eq("id", -1L);
+                } else {
+                    userQuery.in("id", teacherVisibleStudentIds);
+                }
+                userCount = userMapper.selectCount(userQuery);
+            }
             stats.setUserCount(userCount);
             log.info("用户总数: {}", userCount);
         } catch (Exception e) {
@@ -60,8 +86,16 @@ public class StatsServiceImpl implements StatsService {
         }
         
         try {
-            // 统计考试总场次  // 查询考试记录总数
-            Long examCount = examRecordMapper.selectCount(new QueryWrapper<>());
+            // 教师只统计负责班级学员的记录，空范围使用不可能的 user_id 哨兵
+            QueryWrapper<ExamRecord> examQuery = new QueryWrapper<>();
+            if (teacherVisibleStudentIds != null) {
+                if (teacherVisibleStudentIds.isEmpty()) {
+                    examQuery.eq("user_id", -1L);
+                } else {
+                    examQuery.in("user_id", teacherVisibleStudentIds);
+                }
+            }
+            Long examCount = examRecordMapper.selectCount(examQuery);
             stats.setExamCount(examCount);
             log.info("考试总场次: {}", examCount);
         } catch (Exception e) {
@@ -77,6 +111,13 @@ public class StatsServiceImpl implements StatsService {
             
             QueryWrapper<ExamRecord> todayQueryWrapper = new QueryWrapper<>();
             todayQueryWrapper.between("create_time", startOfDay, endOfDay);  // 使用正确的字段名
+            if (teacherVisibleStudentIds != null) {
+                if (teacherVisibleStudentIds.isEmpty()) {
+                    todayQueryWrapper.eq("user_id", -1L);
+                } else {
+                    todayQueryWrapper.in("user_id", teacherVisibleStudentIds);
+                }
+            }
             Long todayExamCount = examRecordMapper.selectCount(todayQueryWrapper);
             stats.setTodayExamCount(todayExamCount);
             log.info("今日考试次数: {}", todayExamCount);
@@ -108,4 +149,9 @@ public class StatsServiceImpl implements StatsService {
         log.info("系统统计数据获取完成: {}", stats);
         return stats;
     }
-} 
+
+    @Override
+    public void checkDatabaseConnection() {
+        questionMapper.selectCount(new QueryWrapper<>());
+    }
+}

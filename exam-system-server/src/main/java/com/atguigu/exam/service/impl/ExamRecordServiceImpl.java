@@ -84,7 +84,7 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
      * @return
      */
     @Override
-    public List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit) {
-        return examRecordMapper.customQueryRanking(paperId,limit);
+    public List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit, java.util.Collection<Long> userIds) {
+        return examRecordMapper.customQueryRanking(paperId, limit, userIds);
     }
 }

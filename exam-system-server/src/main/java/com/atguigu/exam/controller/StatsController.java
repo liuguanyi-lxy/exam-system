@@ -35,8 +35,10 @@ public class StatsController {
     @RequireRole({"TEACHER", "ADMIN"})
     @GetMapping("/overview")  // 处理GET请求
     @Operation(summary = "获取系统概览统计", description = "获取系统的概览统计数据，包括题目、用户、考试等各项数量统计")  // API描述
-    public Result<StatsVo> getSystemStats() {
-        StatsVo stats = statsService.getSystemStats();
+    public Result<StatsVo> getSystemStats(jakarta.servlet.http.HttpServletRequest request) {
+        String role = String.valueOf(request.getAttribute("userRole"));
+        Long userId = (Long) request.getAttribute("userId");
+        StatsVo stats = statsService.getSystemStats(role, userId);
         return Result.success(stats);
     }
 
@@ -48,11 +50,10 @@ public class StatsController {
     @Operation(summary = "测试数据库连接", description = "测试系统数据库连接状态，用于系统健康检查")  // API描述
     public Result<String> testDatabase() {
         try {
-            // 简单测试数据库连接，通过获取统计数据来验证
-            StatsVo stats = statsService.getSystemStats();
-            return Result.success("数据库连接正常，统计数据：" + stats.toString());
+            statsService.checkDatabaseConnection();
+            return Result.success("数据库连接正常");
         } catch (Exception e) {
-            return Result.error("数据库连接测试异常：" + e.getMessage());
+            return Result.error("数据库连接异常");
         }
     }
-} 
+}

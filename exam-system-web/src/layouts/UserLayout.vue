@@ -22,6 +22,12 @@
             class="nav-item"
             :class="{ active: isActive('/favorites') }"
           >我的收藏</router-link>
+          <router-link
+            v-if="userStore.isStudent"
+            to="/my/classes"
+            class="nav-item"
+            :class="{ active: isActive('/my/classes') }"
+          >我的班级</router-link>
           <router-link to="/videos" class="nav-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
           <router-link to="/ranking" class="nav-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
         </nav>
@@ -37,6 +43,9 @@
                 <el-dropdown-menu>
                   <el-dropdown-item @click="$router.push('/exam/history')">
                     <el-icon><Notebook /></el-icon> 我的考试
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/my/classes')">
+                    <el-icon><OfficeBuilding /></el-icon> 我的班级
                   </el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/wrong-questions')">
                     <el-icon><Collection /></el-icon> 错题本
@@ -84,6 +93,14 @@
             :class="{ active: isActive('/favorites') }"
           >
             <el-icon><Star /></el-icon> 我的收藏
+          </router-link>
+          <router-link
+            v-if="userStore.isStudent"
+            to="/my/classes"
+            class="mobile-item"
+            :class="{ active: isActive('/my/classes') }"
+          >
+            <el-icon><OfficeBuilding /></el-icon> 我的班级
           </router-link>
           <router-link to="/videos" class="mobile-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
           <router-link to="/ranking" class="mobile-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
