@@ -196,6 +196,12 @@ const routes = [
         meta: { title: '试卷成绩' },
       },
       {
+        path: 'exam-assign',
+        name: 'ExamAssign',
+        component: () => import('@/views/exam/ExamAssign.vue'),
+        meta: { title: '考试分配' },
+      },
+      {
         path: 'exam-records',
         name: 'ExamRecordList',
         component: () => import('@/views/exam-record/ExamRecordList.vue'),

@@ -1,7 +1,9 @@
 package com.atguigu.exam.service.impl;
 
 import com.atguigu.exam.entity.AnswerRecord;
+import com.atguigu.exam.entity.Clazz;
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.mapper.ClazzMapper;
 import com.atguigu.exam.mapper.ExamRecordMapper;
 import com.atguigu.exam.service.AnswerRecordService;
 import com.atguigu.exam.service.ExamRecordService;
@@ -14,9 +16,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 考试记录Service实现类
@@ -33,6 +39,8 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
     private AnswerRecordService answerRecordService;
     @Autowired
     private ExamRecordMapper examRecordMapper;
+    @Autowired
+    private ClazzMapper clazzMapper;
     @Autowired
     @Lazy
     private com.atguigu.exam.service.PaperService paperService;
@@ -58,17 +66,23 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
         Map<Long, com.atguigu.exam.entity.Paper> paperMap = paperIds.isEmpty() ? Map.of()
                 : paperService.listByIds(paperIds).stream()
                         .collect(java.util.stream.Collectors.toMap(com.atguigu.exam.entity.Paper::getId, p -> p, (a, b) -> a));
+        List<Long> classIds = records.stream().map(ExamRecord::getClassId).filter(Objects::nonNull).distinct().toList();
+        Map<Long, String> classNames = classIds.isEmpty() ? Map.of() : clazzMapper.selectBatchIds(classIds).stream()
+                .collect(Collectors.toMap(Clazz::getId, Clazz::getName));
         for (ExamRecord record : records) {
             record.setPaper(record.getExamId() == null ? null : paperMap.get(record.getExamId().longValue()));
+            if (record.getClassId() != null) record.setClassName(classNames.get(record.getClassId()));
         }
         log.info("考试记录分页查询：{} 条记录，批量关联试卷 {} 份", records.size(), paperMap.size());
     }
     /*
     * 自定义根据考试记录ID删除考试记录*/
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void customRemoveById(Integer id) {
         //删除考试记录需要判断考试记录状态，进行中的考试记录不能删除
         ExamRecord examRecord = getById(id);
+        if (examRecord == null) return;
         if (examRecord.getStatus().equals("进行中")) {
             throw new RuntimeException("进行中的考试记录不能删除！");
         }
@@ -84,7 +98,8 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
      * @return
      */
     @Override
-    public List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit, java.util.Collection<Long> userIds) {
-        return examRecordMapper.customQueryRanking(paperId, limit, userIds);
+    public List<ExamRankingVO> customGetRanking(Integer paperId, Integer limit, Collection<Long> classIds,
+                                               Collection<Long> userIds, Long selfId) {
+        return examRecordMapper.customQueryRanking(paperId, limit, classIds, userIds, selfId);
     }
 }

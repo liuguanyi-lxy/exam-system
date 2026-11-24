@@ -4,6 +4,7 @@ import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.Paper;
 import com.atguigu.exam.service.PaperService;
+import com.atguigu.exam.service.impl.ExamParticipationService;
 import com.atguigu.exam.utils.QuestionSanitizer;
 import com.atguigu.exam.vo.AiPaperVo;
 import com.atguigu.exam.vo.PaperVo;
@@ -28,15 +29,20 @@ public class PaperController {
 
     @Autowired
     private PaperService paperService;
+    @Autowired
+    private ExamParticipationService participation;
 
     /**
      * 获取所有试卷列表（支持模糊搜索和状态筛选）
      */
     @GetMapping("/list")  // 处理GET请求
+    @RequireRole({"STUDENT", "TEACHER", "ADMIN"})
     @Operation(summary = "获取试卷列表", description = "支持按名称模糊搜索和状态筛选的试卷列表查询")  // API描述
     public Result<java.util.List<Paper>> listPapers(
             @Parameter(description = "试卷名称，支持模糊查询") @RequestParam(required = false) String name,
-            @Parameter(description = "试卷状态，可选值：DRAFT/PUBLISHED/STOPPED") @RequestParam(required = false) String status) {
+            @Parameter(description = "试卷状态，可选值：DRAFT/PUBLISHED/STOPPED") @RequestParam(required = false) String status,
+            @RequestAttribute("userId") Long userId, @RequestAttribute("userRole") String role) {
+        if ("STUDENT".equals(role)) return Result.success(participation.list(userId, name));
         List<Paper> paperList = paperService.getAllPapers(name,status);
         log.info("试卷列表接口调用成功！本次条件：name = {} , status = {} , 查询列表为：{}", name, status, paperList);
         return Result.success(paperList);
@@ -89,14 +95,18 @@ public class PaperController {
      * 获取试卷详情（包含题目）
      */
     @GetMapping("/{id}")  // 处理GET请求
+    @RequireRole({"STUDENT", "TEACHER", "ADMIN"})
     @Operation(summary = "获取试卷详情", description = "获取试卷的详细信息，包括试卷基本信息和包含的所有题目")  // API描述
     public Result<Paper> getPaperById(@Parameter(description = "试卷ID") @PathVariable Integer id,
                                       jakarta.servlet.http.HttpServletRequest request) {
+        boolean student = "STUDENT".equals(request.getAttribute("userRole"));
+        Paper preview = student ? participation.studentPreview((Long) request.getAttribute("userId"), id) : null;
+        if (preview != null && preview.getResumeRecordId() == null) return Result.success(preview);
         Paper paper = paperService.customPaperDetailById(Long.valueOf(id));
-        // 学生侧只返回题干与选项，剔除标准答案/解析/选项对错，避免考试中直接看到答案
-        Object role = request.getAttribute("userRole");
-        if (role == null || "STUDENT".equals(String.valueOf(role))) {
+        if (paper == null) return Result.error("试卷不存在");
+        if (student) {
             QuestionSanitizer.stripAnswer(paper.getQuestions());
+            paper.setResumeRecordId(preview.getResumeRecordId());
         }
         log.info("查询试卷详情成功！试卷ID：{}，题目数：{}", id,
                 paper.getQuestions() == null ? 0 : paper.getQuestions().size());
@@ -133,4 +143,4 @@ public class PaperController {
         log.info("id:{}的试卷删除成功！",id);
         return Result.success("试卷删除成功！！");
     }
-} 
+}

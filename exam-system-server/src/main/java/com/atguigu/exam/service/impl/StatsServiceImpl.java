@@ -1,6 +1,7 @@
 package com.atguigu.exam.service.impl;
 
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.service.ExamRecordScope;
 import com.atguigu.exam.mapper.*;
 import com.atguigu.exam.service.ClassScopeService;
 import com.atguigu.exam.service.StatsService;
@@ -47,12 +48,8 @@ public class StatsServiceImpl implements StatsService {
     @Override
     public StatsVo getSystemStats(String role, Long userId) {
         StatsVo stats = new StatsVo();
-        java.util.Set<Long> teacherVisibleStudentIds = null;
-        if ("TEACHER".equals(role)) {
-            teacherVisibleStudentIds = userId == null
-                    ? java.util.Collections.emptySet()
-                    : classScopeService.getStudentUserIds(classScopeService.getTeacherClassIds(userId));
-        }
+        ExamRecordScope scope = "TEACHER".equals(role) ? ExamRecordScope.teacher(classScopeService, userId) : null;
+        java.util.Set<Long> teacherVisibleStudentIds = scope == null ? null : scope.legacyStudentIds();
         
         try {
             // 统计题目总数  // 查询题目数量
@@ -88,13 +85,7 @@ public class StatsServiceImpl implements StatsService {
         try {
             // 教师只统计负责班级学员的记录，空范围使用不可能的 user_id 哨兵
             QueryWrapper<ExamRecord> examQuery = new QueryWrapper<>();
-            if (teacherVisibleStudentIds != null) {
-                if (teacherVisibleStudentIds.isEmpty()) {
-                    examQuery.eq("user_id", -1L);
-                } else {
-                    examQuery.in("user_id", teacherVisibleStudentIds);
-                }
-            }
+            if (scope != null) scope.filter(examQuery);
             Long examCount = examRecordMapper.selectCount(examQuery);
             stats.setExamCount(examCount);
             log.info("考试总场次: {}", examCount);
@@ -111,13 +102,7 @@ public class StatsServiceImpl implements StatsService {
             
             QueryWrapper<ExamRecord> todayQueryWrapper = new QueryWrapper<>();
             todayQueryWrapper.between("create_time", startOfDay, endOfDay);  // 使用正确的字段名
-            if (teacherVisibleStudentIds != null) {
-                if (teacherVisibleStudentIds.isEmpty()) {
-                    todayQueryWrapper.eq("user_id", -1L);
-                } else {
-                    todayQueryWrapper.in("user_id", teacherVisibleStudentIds);
-                }
-            }
+            if (scope != null) scope.filter(todayQueryWrapper);
             Long todayExamCount = examRecordMapper.selectCount(todayQueryWrapper);
             stats.setTodayExamCount(todayExamCount);
             log.info("今日考试次数: {}", todayExamCount);

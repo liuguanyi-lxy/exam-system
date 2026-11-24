@@ -2,10 +2,12 @@ package com.atguigu.exam.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -41,8 +43,23 @@ public class Paper extends BaseEntity {
             example = "120")
     private Integer duration; // 考试时长
 
+    @TableField(exist = false)
+    private Boolean assigned;
+    @TableField(exist = false)
+    private String windowStatus;
+    @TableField(exist = false)
+    private Integer attemptLeft;
+    @TableField(exist = false)
+    private Long resumeRecordId;
+    @TableField(exist = false)
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime examStartTime;
+    @TableField(exist = false)
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime examEndTime;
+
     @Schema(description = "试卷包含的题目列表，含题目详细信息和分值")
     @TableField(exist = false)
     private List<Question> questions; // 题目列表，非数据库字段
 
-} 
+}

@@ -7,9 +7,9 @@ import com.atguigu.exam.entity.ExamRecord;
 import com.atguigu.exam.entity.Paper;
 import com.atguigu.exam.service.ClassScopeService;
 import com.atguigu.exam.service.ExamRecordService;
+import com.atguigu.exam.service.ExamRecordScope;
 import com.atguigu.exam.service.ExamService;
 import com.atguigu.exam.service.PaperService;
-import com.atguigu.exam.exception.ClassScopeException;
 import com.atguigu.exam.utils.QuestionSanitizer;
 import com.atguigu.exam.vo.ExamRankingVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -43,8 +43,6 @@ public class ExamRecordController {
     @Autowired
     private PaperService paperService;
     @Autowired
-    private com.atguigu.exam.service.UserService userService;
-    @Autowired
     private ClassScopeService classScopeService;
     /**
      * 分页查询考试记录
@@ -56,6 +54,7 @@ public class ExamRecordController {
             @Parameter(description = "当前页码，从1开始", example = "1") @RequestParam(defaultValue = "1") Integer page,
             @Parameter(description = "每页显示数量", example = "20") @RequestParam(defaultValue = "20") Integer size,
             @Parameter(description = "试卷ID筛选条件") @RequestParam(required = false) Integer paperId,
+            @RequestParam(required = false) Long classId,
             @Parameter(description = "学生姓名筛选条件") @RequestParam(required = false) String studentName,
             @Parameter(description = "学号筛选条件") @RequestParam(required = false) String studentNumber,
             @Parameter(description = "考试状态，0-进行中，1-已完成，2-已批阅") @RequestParam(required = false) Integer status,
@@ -72,19 +71,13 @@ public class ExamRecordController {
         LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
         //按试卷筛选：试卷列表页点「考生成绩」进来时需要
         examRecordLambdaQueryWrapper.eq(paperId != null, ExamRecord::getExamId, paperId);
+        examRecordLambdaQueryWrapper.eq(classId != null && teacherOrAdmin, ExamRecord::getClassId, classId);
         examRecordLambdaQueryWrapper.like(studentName != null, ExamRecord::getStudentName, studentName);
         //学生角色后端强制按本人 userId 过滤，前端传什么筛选条件都只看得到自己的记录
         Long currentUserId = (Long) request.getAttribute("userId");
         String currentRole = String.valueOf(request.getAttribute("userRole"));
         if ("TEACHER".equals(currentRole)) {
-            java.util.Set<Long> visibleStudentIds = currentUserId == null
-                    ? java.util.Collections.emptySet()
-                    : classScopeService.getStudentUserIds(classScopeService.getTeacherClassIds(currentUserId));
-            if (visibleStudentIds.isEmpty()) {
-                examRecordLambdaQueryWrapper.eq(ExamRecord::getUserId, -1L);
-            } else {
-                examRecordLambdaQueryWrapper.in(ExamRecord::getUserId, visibleStudentIds);
-            }
+            ExamRecordScope.teacher(classScopeService, currentUserId).filter(examRecordLambdaQueryWrapper);
         } else if (!teacherOrAdmin) {
             examRecordLambdaQueryWrapper.eq(ExamRecord::getUserId, currentUserId == null ? -1L : currentUserId);
         }
@@ -92,7 +85,7 @@ public class ExamRecordController {
         if (status != null) {
             String statusStr = switch (status) {
                 case 0 -> "进行中";
-                case 1 -> "已完成";
+                case 1 -> ExamStatus.FINISHED;
                 case 2 -> "已批阅";
                 default -> null;
             };
@@ -124,21 +117,18 @@ public class ExamRecordController {
     @Operation(summary = "试卷成绩统计", description = "按试卷统计参考人次、平均分、最高最低分、及格率与分数段分布")
     public Result<java.util.Map<String, Object>> getPaperStats(
             @Parameter(description = "试卷ID") @RequestParam Integer paperId,
+            @RequestParam(required = false) Long classId,
             jakarta.servlet.http.HttpServletRequest request) {
         Paper paper = paperService.getById(paperId);
         if (paper == null) {
             return Result.error("试卷不存在");
         }
         LambdaQueryWrapper<ExamRecord> recordsQuery =
-                new LambdaQueryWrapper<ExamRecord>().eq(ExamRecord::getExamId, paperId);
+                new LambdaQueryWrapper<ExamRecord>().eq(ExamRecord::getExamId, paperId)
+                        .eq(classId != null, ExamRecord::getClassId, classId);
         String role = String.valueOf(request.getAttribute("userRole"));
         if ("TEACHER".equals(role)) {
-            java.util.Set<Long> visibleStudentIds = getTeacherStudentIds(request);
-            if (visibleStudentIds.isEmpty()) {
-                recordsQuery.eq(ExamRecord::getUserId, -1L);
-            } else {
-                recordsQuery.in(ExamRecord::getUserId, visibleStudentIds);
-            }
+            ExamRecordScope.teacher(classScopeService, (Long) request.getAttribute("userId")).filter(recordsQuery);
         }
         java.util.List<ExamRecord> records = examRecordService.list(recordsQuery);
 
@@ -200,7 +190,7 @@ public class ExamRecordController {
         boolean teacherOrAdmin = isTeacherOrAdmin(request);
         //归属校验：学生只能查看自己的考试记录
         if (!teacherOrAdmin) {
-            checkRecordOwner(examRecord, request);
+            ExamRecordScope.requireStudentOwner((Long) request.getAttribute("userId"), examRecord);
         }
         // 成绩出来之前（进行中/已交卷未批阅）不能让学生从记录详情里看到答案和解析；
         // 批阅之后结果页需要展示逐题解析与整体评价，完整返回
@@ -212,38 +202,8 @@ public class ExamRecordController {
         return Result.success(examRecord);
     }
 
-    /**
-     * 考试记录归属校验：优先比对 user_id；
-     * 历史记录 user_id 为空时退化为 student_name 与当前用户姓名比对
-     */
-    private void checkRecordOwner(ExamRecord examRecord, jakarta.servlet.http.HttpServletRequest request) {
-        Long currentUserId = (Long) request.getAttribute("userId");
-        if (examRecord.getUserId() != null) {
-            if (!examRecord.getUserId().equals(currentUserId)) {
-                log.warn("用户{}尝试查看不属于自己的考试记录{}", currentUserId, examRecord.getId());
-                throw new RuntimeException("无权查看该考试记录！");
-            }
-            return;
-        }
-        com.atguigu.exam.entity.User user = userService.getById(currentUserId);
-        if (user == null || !examRecord.getStudentName().equals(user.getRealName())) {
-            throw new RuntimeException("无权查看该考试记录！");
-        }
-    }
-
     private void checkTeacherRecordScope(ExamRecord record, jakarta.servlet.http.HttpServletRequest request) {
-        Long userId = record.getUserId();
-        if (userId == null || !getTeacherStudentIds(request).contains(userId)) {
-            throw new ClassScopeException("无权访问该考试记录");
-        }
-    }
-
-    private java.util.Set<Long> getTeacherStudentIds(jakarta.servlet.http.HttpServletRequest request) {
-        Long currentUserId = (Long) request.getAttribute("userId");
-        if (currentUserId == null) {
-            return java.util.Collections.emptySet();
-        }
-        return classScopeService.getStudentUserIds(classScopeService.getTeacherClassIds(currentUserId));
+        ExamRecordScope.requireTeacherRecord(classScopeService, (Long) request.getAttribute("userId"), record);
     }
 
     /** 当前请求是否来自教师/管理员 */
@@ -275,9 +235,9 @@ public class ExamRecordController {
                     checkTeacherRecordScope(examRecord, request);
                 }
             } else if (!isTeacherOrAdmin(request)) {
-                ExamRecord examRecord = examService.customGetExamRecordById(id);
+                ExamRecord examRecord = examRecordService.getById(id);
                 if (examRecord != null) {
-                    checkRecordOwner(examRecord, request);
+                    ExamRecordScope.requireStudentOwner((Long) request.getAttribute("userId"), examRecord);
                 }
             }
             examRecordService.customRemoveById(id);
@@ -303,6 +263,8 @@ public class ExamRecordController {
     ) {
         String role = String.valueOf(request.getAttribute("userRole"));
         java.util.Collection<Long> visibleStudentIds = null;
+        List<Long> visibleClassIds = null;
+        Long self = null;
         if ("TEACHER".equals(role) || "STUDENT".equals(role)) {
             Long userId = (Long) request.getAttribute("userId");
             List<Long> classIds = userId == null ? List.of()
@@ -310,17 +272,15 @@ public class ExamRecordController {
                     ? classScopeService.getTeacherClassIds(userId)
                     : classScopeService.getStudentClassIds(userId);
             java.util.Set<Long> studentIds = classScopeService.getStudentUserIds(classIds);
-            if ("STUDENT".equals(role) && userId != null) {
-                studentIds = new java.util.TreeSet<>(studentIds);
-                studentIds.add(userId);
-            }
-            if (studentIds.isEmpty()) {
+            if ("STUDENT".equals(role)) self = userId;
+            if (classIds.isEmpty() && self == null) {
                 return Result.success(List.of());
             }
             visibleStudentIds = studentIds;
+            visibleClassIds = classIds;
         }
         // 使用优化的查询方法，避免N+1查询；教师和学员仅查看班级范围内成绩。
-        List<ExamRankingVO> examRankingVOS = examRecordService.customGetRanking(paperId, limit, visibleStudentIds);
+        List<ExamRankingVO> examRankingVOS = examRecordService.customGetRanking(paperId, limit, visibleClassIds, visibleStudentIds, self);
         log.info("查询：{}试卷下的{}条数据成功！数据为：{}",paperId,limit,examRankingVOS);
         return Result.success(examRankingVOS);
     }

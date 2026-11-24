@@ -7,8 +7,9 @@
         <el-option v-for="p in papers" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
       <el-select v-model="filters.classId" placeholder="按班级筛选" clearable filterable style="width:200px">
-        <el-option v-for="c in classes" :key="c.id" :label="c.name" :value="c.id" />
+        <el-option v-for="item in classes" :key="item.id" :label="formatExamClassOption(item)" :value="item.id" />
       </el-select>
+      <el-button v-if="classOptionsFailed" link type="primary" @click="loadClassOptions">重试班级列表</el-button>
       <el-input v-model="filters.studentName" placeholder="考生姓名" clearable style="width:180px" />
       <el-select v-model="filters.status" placeholder="状态" clearable style="width:140px">
         <el-option label="进行中" :value="0" /><el-option label="已完成" :value="1" /><el-option label="已批阅" :value="2" />
@@ -58,11 +59,11 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { getExamRecordList, deleteExamRecord } from '@/api/examRecord'
 import { getPaperList } from '@/api/paper'
-import { getClassList } from '@/api/classManage'
+import { formatExamClassOption, getExamClassOptions } from '@/api/examClass'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -72,6 +73,7 @@ const total = ref(0)
 const filters = reactive({ paperId: null, classId: null, studentName: '', status: null, startDate: '', endDate: '' })
 const papers = ref([])
 const classes = ref([])
+const classOptionsFailed = ref(false)
 
 async function loadData() {
   loading.value = true
@@ -99,14 +101,19 @@ async function handleDelete(row) {
   loadData()
 }
 
-import { onMounted } from 'vue'
-onMounted(async () => {
-  try { papers.value = await getPaperList() || [] } catch { papers.value = [] }
-  // 班级下拉：教师只返回负责班级，管理员全量（复用 M1 班级列表接口）
+async function loadClassOptions() {
+  classOptionsFailed.value = false
   try {
-    const res = await getClassList({ page: 1, size: 200 })
-    classes.value = res?.records || []
-  } catch { classes.value = [] }
+    classes.value = await getExamClassOptions()
+  } catch {
+    classes.value = []
+    classOptionsFailed.value = true
+  }
+}
+
+onMounted(async () => {
   loadData()
+  loadClassOptions()
+  try { papers.value = await getPaperList() || [] } catch { papers.value = [] }
 })
 </script>

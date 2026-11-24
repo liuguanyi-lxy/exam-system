@@ -16,11 +16,18 @@
         <if test="paperId != null">
             and pr.id=#{paperId}
         </if>
-        <if test="userIds != null">
-            and er.user_id in
-            <foreach collection="userIds" item="userId" open="(" separator="," close=")">
-                #{userId}
-            </foreach>
+        <if test="classIds != null or userIds != null or selfId != null">
+            AND (1 = 0
+            <if test="classIds != null and !classIds.isEmpty()">
+                OR er.class_id IN
+                <foreach collection="classIds" item="classId" open="(" separator="," close=")">#{classId}</foreach>
+            </if>
+            <if test="userIds != null and !userIds.isEmpty()">
+                OR (er.class_id IS NULL AND er.user_id IN
+                <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>)
+            </if>
+            <if test="selfId != null">OR er.user_id = #{selfId}</if>
+            )
         </if>
         order by er.score desc , duration asc
         <if test="limit != null">

@@ -4,12 +4,10 @@ import com.atguigu.exam.common.ExamStatus;
 import com.atguigu.exam.entity.AnswerRecord;
 import com.atguigu.exam.entity.ExamRecord;
 import com.atguigu.exam.entity.PaperQuestion;
-import com.atguigu.exam.entity.User;
 import com.atguigu.exam.mapper.ExamRecordMapper;
 import com.atguigu.exam.service.AnswerRecordService;
 import com.atguigu.exam.service.PaperQuestionService;
 import com.atguigu.exam.service.PaperService;
-import com.atguigu.exam.service.UserService;
 import com.atguigu.exam.vo.SubmitAnswerVo;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,8 +59,6 @@ class ExamSubmitAnswerTest {
     @Mock
     private AnswerRecordService answerRecordService;
     @Mock
-    private UserService userService;
-    @Mock
     private ExamRecordMapper examRecordMapper;
 
     private ExamServiceImpl examService;
@@ -71,7 +69,6 @@ class ExamSubmitAnswerTest {
         ReflectionTestUtils.setField(examService, "paperService", paperService);
         ReflectionTestUtils.setField(examService, "paperQuestionService", paperQuestionService);
         ReflectionTestUtils.setField(examService, "answerRecordService", answerRecordService);
-        ReflectionTestUtils.setField(examService, "userService", userService);
         // ServiceImpl.getById / updateById 内部调用 baseMapper，注入 mock 避免真库
         ReflectionTestUtils.setField(examService, "baseMapper", examRecordMapper);
     }
@@ -173,15 +170,10 @@ class ExamSubmitAnswerTest {
     }
 
     @Test
-    void 历史记录无考生ID且姓名不一致_拒绝提交() {
+    void submissionRejectsLegacyRecordWithoutOwnerId() {
         ExamRecord record = inProgressRecord(null);
         record.setStudentName("张三");
         when(examRecordMapper.selectById(EXAM_RECORD_ID)).thenReturn(record);
-
-        User currentUser = new User();
-        currentUser.setId(STUDENT_ID);
-        currentUser.setRealName("李四");
-        when(userService.getById(STUDENT_ID)).thenReturn(currentUser);
 
         RuntimeException exception = assertThrows(RuntimeException.class,
                 () -> examService.customSubmitAnswer(EXAM_RECORD_ID,
@@ -189,6 +181,18 @@ class ExamSubmitAnswerTest {
 
         assertTrue(exception.getMessage().contains("无权操作"));
         verify(answerRecordService, never()).saveBatch(anyCollection());
+    }
+
+    @Test
+    void gradingDoesNotFinishAnUnsubmittedAttempt() {
+        ExamServiceImpl service = spy(examService);
+        doReturn(inProgressRecord(STUDENT_ID)).when(service).customGetExamRecordById(EXAM_RECORD_ID);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.gradeExam(EXAM_RECORD_ID, STUDENT_ID, false));
+
+        assertEquals("请先提交答卷再判卷", exception.getMessage());
+        verify(examRecordMapper, never()).updateById(any(ExamRecord.class));
     }
 
     @Test

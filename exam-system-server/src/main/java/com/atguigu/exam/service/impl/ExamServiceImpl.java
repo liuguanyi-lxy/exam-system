@@ -15,7 +15,6 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,7 +50,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     @Autowired
     private AiService aiService;
     @Autowired
-    private UserService userService;
+    private ExamParticipationService examParticipationService;
     @Autowired
     @Qualifier("examExecutor")
     private ThreadPoolExecutor examExecutor;
@@ -67,42 +66,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
      */
     @Override
     public ExamRecord startExam(StartExamVo startExamVo, Long currentUserId) {
-        //创建一个考试记录对象并存储到数据库中
-        //1.校验该学生是否有相同试卷ID的考试正在进行，存在则查询对应的试卷对象赋值给考试记录对象的属性然后直接返回
-        //按 userId 维度查重：同一账号对同一试卷只有一条进行中的考试（studentName 仅作展示冗余）
-        LambdaQueryWrapper<ExamRecord> examRecordLambdaQueryWrapper = new LambdaQueryWrapper<>();
-        examRecordLambdaQueryWrapper.eq(ExamRecord::getUserId, currentUserId);
-        examRecordLambdaQueryWrapper.eq(ExamRecord::getExamId, startExamVo.getPaperId());
-        examRecordLambdaQueryWrapper.eq(ExamRecord::getStatus, ExamStatus.IN_PROGRESS);
-        //getOne传入false：存在多条进行中记录时取第一条而不是抛异常，避免历史脏数据导致无法开考
-        ExamRecord examRecord = this.getOne(examRecordLambdaQueryWrapper, false);
-        if (examRecord != null) {
-            log.info("%s同学的该考试正在进行中，请勿重复考试".formatted(startExamVo.getStudentName()));
-            return examRecord;
-        }
-        //2.不存在则创建新的考试记录对象并存储到数据库中
-        ExamRecord record = new ExamRecord();
-        record.setUserId(currentUserId);
-        record.setStudentName(startExamVo.getStudentName());
-        record.setExamId(startExamVo.getPaperId());
-        record.setStatus(ExamStatus.IN_PROGRESS);
-        record.setWindowSwitches(0);
-        record.setStartTime(LocalDateTime.now());//使用的是本地的时区时间
-        //进行试卷记录保存
-        try {
-            this.save(record);
-        } catch (DuplicateKeyException e) {
-            //并发双开撞了 exam_records 表的唯一索引 uk_exam_active_student_paper（只约束"进行中"记录），
-            //说明另一请求刚创建了进行中的记录，回查返回即可，保证同一学生同一试卷只有一条进行中的考试
-            log.warn("{}同学并发重复开考试卷{}，已返回已存在的进行中记录", startExamVo.getStudentName(), startExamVo.getPaperId());
-            ExamRecord existing = this.getOne(examRecordLambdaQueryWrapper, false);
-            if (existing != null) {
-                return existing;
-            }
-            throw new RuntimeException("开考请求过于频繁，请稍后刷新重试！");
-        }
-        //返回试卷记录，即包含其中的试卷信息给前端
-        return record;
+        return examParticipationService.start(startExamVo, currentUserId);
     }
     /**
      * 根据考试记录ID获取考试记录详情,包括其中关联的试卷信息和答题记录信息
@@ -157,7 +121,7 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
         if (examRecord == null) {
             throw new RuntimeException("ID为%s的考试记录不存在，提交失败！".formatted(examRecordId));
         }
-        checkRecordOwner(examRecord, currentUserId, isTeacherOrAdmin);
+        if (!isTeacherOrAdmin) ExamRecordScope.requireStudentOwner(currentUserId, examRecord);
         //已交卷/已批阅的记录拒绝重复提交，防止重复插入答题记录
         if (!ExamStatus.IN_PROGRESS.equals(examRecord.getStatus())) {
             throw new RuntimeException("该考试已交卷，请勿重复提交！");
@@ -200,28 +164,6 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
     }
 
     /**
-     * 校验考试记录归属：优先比对 user_id；历史记录 user_id 为空时退化为 student_name 与当前用户姓名比对
-     * 教师/管理员放行（管理端代操作场景）
-     */
-    private void checkRecordOwner(ExamRecord examRecord, Long currentUserId, boolean isTeacherOrAdmin) {
-        if (isTeacherOrAdmin) {
-            return;
-        }
-        if (examRecord.getUserId() != null) {
-            if (!examRecord.getUserId().equals(currentUserId)) {
-                log.warn("用户{}尝试操作不属于自己的考试记录{}", currentUserId, examRecord.getId());
-                throw new RuntimeException("无权操作该考试记录！");
-            }
-            return;
-        }
-        //历史数据兜底：user_id 为空的旧记录按姓名弱校验
-        User user = userService.getById(currentUserId);
-        if (user == null || !examRecord.getStudentName().equals(user.getRealName())) {
-            throw new RuntimeException("无权操作该考试记录！");
-        }
-    }
-
-    /**
      * 服务端交卷时间校验：开始时间 + 试卷时长 + 宽限秒数 之后不允许再交卷
      * 试卷时长缺失或试卷已删除时跳过校验，不阻塞交卷
      */
@@ -257,7 +199,10 @@ public class ExamServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRecord> i
             throw new RuntimeException("ID为%s的考试记录不存在，无法判卷".formatted(examRecordId));
         }
         //归属校验：仅考生本人或教师/管理员可触发判卷，防止他人消耗AI调用
-        checkRecordOwner(examRecord, currentUserId, isTeacherOrAdmin);
+        if (!isTeacherOrAdmin) ExamRecordScope.requireStudentOwner(currentUserId, examRecord);
+        if (ExamStatus.IN_PROGRESS.equals(examRecord.getStatus())) {
+            throw new IllegalArgumentException("请先提交答卷再判卷");
+        }
         //已批阅过的记录直接返回：结果页刷新时不会重复消耗AI调用
         if (ExamStatus.GRADED.equals(examRecord.getStatus())) {
             return examRecord;

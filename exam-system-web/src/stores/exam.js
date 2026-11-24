@@ -20,9 +20,12 @@ export const useExamStore = defineStore('exam', {
   }),
 
   actions: {
-    async startExam(paperId, studentName) {
-      const record = await startExamApi({ paperId, studentName })
+    async startExam(paperId, studentName, resumeRecordId) {
+      const record = await startExamApi({ paperId, studentName, resumeRecordId })
       const paper = await getPaperById(paperId)
+      if (String(paper.resumeRecordId) !== String(record.id) || !Array.isArray(paper.questions)) {
+        throw new Error('考试记录已不可用')
+      }
       const durationMs = (paper.duration || 60) * 60 * 1000
       // 截止时间以服务端开考时间为基准：刷新重进也不会把考试时间"续命"；
       // 服务端交卷接口还有一道时长+宽限校验兜底
@@ -52,6 +55,10 @@ export const useExamStore = defineStore('exam', {
       if (!saved?.recordId || !saved?.paperId) return false
       let paper
       try { paper = await getPaperById(saved.paperId) } catch { this.clearSession(); return false }
+      if (String(paper.resumeRecordId) !== String(saved.recordId) || !Array.isArray(paper.questions)) {
+        this.clearSession()
+        return false
+      }
       const deadline = saved.deadline || Date.now() + (paper.duration || 60) * 60 * 1000
       this.currentExam = {
         recordId: saved.recordId,

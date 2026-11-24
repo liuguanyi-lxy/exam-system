@@ -27,7 +27,7 @@
           <span class="paper-type-icon"><el-icon :size="26"><Document /></el-icon></span>
           <div>
             <div class="paper-name">{{ paper.name }}</div>
-            <div class="paper-status"><el-tag size="small" type="success" effect="light">已发布</el-tag></div>
+            <div class="paper-status"><el-tag size="small" type="success" effect="light">{{ paper.resumeRecordId ? '可继续' : (paper.windowStatus || '已发布') }}</el-tag></div>
           </div>
         </div>
         <el-descriptions :column="2" border class="paper-descs">
@@ -49,7 +49,7 @@
       <div class="glass-card form-card">
         <el-form label-width="90px">
           <el-form-item label="考生姓名" required>
-            <el-input v-model="studentName" placeholder="请输入你的姓名" style="width:280px" :prefix-icon="User" />
+            <el-input v-model="studentName" maxlength="50" placeholder="请输入你的姓名" style="width:280px" :prefix-icon="User" />
           </el-form-item>
         </el-form>
       </div>
@@ -67,8 +67,10 @@
       </div>
 
       <div style="margin-top:28px;text-align:center">
-        <el-button type="primary" size="large" class="btn-gradient start-btn" round @click="handleStart" :loading="starting">
-          开始考试
+        <p v-if="blockReason && !loading">{{ blockReason }}</p>
+        <el-button type="primary" size="large" class="btn-gradient start-btn" round @click="handleStart"
+          :loading="starting" :disabled="loading || !!blockReason">
+          {{ resumeRecordId ? '继续考试' : '开始考试' }}
         </el-button>
       </div>
     </template>
@@ -76,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User } from '@element-plus/icons-vue'
@@ -93,6 +95,17 @@ const started = ref(false)
 const recordId = ref(null)
 const paper = ref(null)
 const studentName = ref('')
+const resumeRecordId = computed(() => route.query.resumeRecordId || paper.value?.resumeRecordId)
+const blockReason = computed(() => {
+  if (!paper.value) return '该试卷不存在或不可参加'
+  if (resumeRecordId.value) {
+    return String(resumeRecordId.value) === String(paper.value.resumeRecordId) ? '' : '续考记录已不可用，请返回考试列表'
+  }
+  if (paper.value.windowStatus === '未开始') return `尚未开始：${paper.value.examStartTime}`
+  if (paper.value.windowStatus === '已结束') return `已结束：${paper.value.examEndTime}`
+  if (paper.value.attemptLeft != null && paper.value.attemptLeft <= 0) return '考试次数已用完'
+  return ''
+})
 
 onMounted(async () => {
   loading.value = true
@@ -100,17 +113,21 @@ onMounted(async () => {
   if (userStore.realName || userStore.username) {
     studentName.value = userStore.realName || userStore.username
   }
-  try { paper.value = await getPaperById(Number(route.params.paperId)); }
+  try { paper.value = await getPaperById(Number(route.params.paperId)) }
+  catch { paper.value = null }
   finally { loading.value = false }
 })
 
 async function handleStart() {
+  if (blockReason.value || loading.value || starting.value) return
   if (!studentName.value.trim()) { ElMessage.warning('请输入姓名'); return }
   starting.value = true
   try {
-    const record = await examStore.startExam(Number(route.params.paperId), studentName.value.trim())
+    const record = await examStore.startExam(Number(route.params.paperId), studentName.value.trim(), resumeRecordId.value)
     recordId.value = record.id
     started.value = true
+  } catch {
+    if (examStore.currentExam) ElMessage.warning('未进入考试，请返回列表确认当前状态')
   } finally { starting.value = false }
 }
 </script>
