@@ -285,6 +285,12 @@ const routes = [
         component: () => import('@/views/remediation/RemediationOverview.vue'),
         meta: { title: '补课概览' },
       },
+      {
+        path: 'teaching-stats',
+        name: 'TeachingStats',
+        component: () => import('@/views/stats/TeachingStats.vue'),
+        meta: { title: '教学统计' },
+      },
     ],
   },
 
