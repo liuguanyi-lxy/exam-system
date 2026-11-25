@@ -1,7 +1,7 @@
 # 开发进度快照
 
 > 用途：跨会话保留开发进度。恢复开发前先读本文件与 git log，再继续。
-> 最后更新：2026-11-24
+> 最后更新：2026-11-25
 
 ## M1（已发布到功能分支，环境验收待补）
 
@@ -62,6 +62,19 @@
   3. 观察项（未改）：业务校验异常（IllegalArgumentException）经全局兜底 handler 返回 HTTP 200 + `code=500` + message，前端按 `code` 字段处理可正常展示文案；语义不理想但属全局历史行为，留后续统一治理。
   - 验证数据：云端 `ai_exam_reports`/`ai_question_chats` 各 1 条报告与 9 条追问轮次（真实 AI 生成）；测试用知识点 `Java基础语法`/`面向对象` 及关联为验证造数。前端浏览器验证仍未做。
 - 遗留待清理（2026-11-24 用户确认留到 M5）：未跟踪死文件 `exam-system-server/src/main/java/com/atguigu/exam/service/CourseService.java`（空接口无引用，M5 补课任务链实现时一并删除或落实）；`.agents/` 目录暂不处理。
+
+## M5（已合并 main（PR #4，`7831948`），环境验收待补）
+
+- 补课任务链与掌握度：报告 READY（confidence NORMAL）且薄弱点非空时自动按点生成任务链（`INSERT IGNORE` + 唯一键幂等，报告 retry 不重建）；LIMITED（DEGRADED）不生成；生成失败只记日志降级不拖垮报告。
+- 四步任务链：推荐视频 → 基础练习 → 变式题 → 阶段复测。视频门禁口径：无映射视频自动放行（视同 videoDone=1）/ 全部映射视频 M2 口径 COMPLETED / 快照 allowSkipVideo，三者其一放行练习与复测。轮次模型：本轮余题直接返回，无余题 round+1 重开新选题；变式排除基础练习已用题，不足回退全池标 `insufficient`。判分：客观题复用考试判卷比对（包级方法复用），TEXT/CODE 走一次 AI 调用（score≥60 记正确，AI 失败按未判分不炸整批）；提交幂等 `WHERE user_answer IS NULL`。
+- 掌握度：单语句原子 upsert（SQL 内折算，禁读改写）——待复测 `total = videoDone*40 + accuracy*0.6`，复测后 `= videoDone*20 + accuracy*0.3 + retest*0.5`；复测达快照阈值（默认 60）任务 COMPLETED；forceRetest=false 时视频+练习完成即完成（掌握度保持 pending_retest=1 "未复测"）。
+- 教师侧：PUT 课程级补课策略（课程归属=负责班级∩分配该课程的班级；upsert）、PUT 知识点视频映射（**物理删除**——逻辑删行占 uk_kp_video 唯一键，替换式维护必须物理删）、GET 班级概览（汇总/学员明细/薄弱点排行，`isTeacherOfClass` 数据范围）。
+- 报告推荐升级：`recommendations` 升级为 `{text, videos[]}`（`@JsonCreator` 委托兼容旧字符串 JSON），有映射下发已发布视频（videoId/title/fileUrl/coverUrl），无映射回退文字建议；删除死文件 CourseService.java。
+- 产品决策（2026-11-25 用户拍板）：策略配置课程级，但试卷/考试记录无课程关联——**开考班级经 course_classes 只分配一门课程时用该课程配置，多门/无课程用内置默认值**（60/5/5/强制复测/不跳视频/14 天），生成时快照进 `config_snapshot`，后续改配置不影响已生成任务。
+- 前端：补课中心列表（状态筛选/掌握度进度条/逾期红标）+ 任务详情四步 Steps 交互 + 练习共用组件（脱敏作答、AI 反馈、再练一轮）；路由与菜单限 STUDENT；ExamResult 报告页视频卡片兼容渲染（跳站内 `/videos/:id`）。
+- AI review（2026-11-25，docs/review-m5-remediation.md）：P0×0；修复 P1（并发整轮重复提交时 upsert 以 accuracy=0 覆盖既有掌握度/复测分——totalCount=0 跳过联动回显 DB 值）与 P2（AI 主观题判分移出事务，TransactionTemplate 单事务落库）；P3×7 记录不修（部分提交口径、复测用正确率而非分值加权、列表阈值硬编码 60 等）。
+- 增量 SQL：`sql/2026-11-25_m5_remediation.sql`（5 张表）**尚未执行**，执行前先查目标库当前状态、不可重复执行。
+- 验证：隔离后端回归 221 项全绿（基线 186 → +35），前端 `npm run build` 通过。真实数据库迁移、AI 判分链路与端到端验收待补；教师侧三个接口暂无前端入口（API 可用），需要时再补页面。
 
 ## 已完成并推送（main 分支，github.com/liuguanyi-lxy/exam-system）
 
