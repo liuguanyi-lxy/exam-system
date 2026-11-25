@@ -255,7 +255,7 @@ public interface TeachingStatsMapper {
                           WHERE er3.is_deleted = 0 AND er3.status = '已批阅'
                             AND er3.user_id IN (SELECT m3.user_id FROM class_members m3
                                                  WHERE m3.class_id = cl.id AND m3.role_in_class = 'STUDENT')
-                            AND (er3.class_id = cl.id OR er3.exam_class_id = cl.id)), 0), 0) * 100)
+                            AND (er3.class_id = cl.id OR er3.exam_class_id = cl.id)), 0), 0) * 100))
                      AS passRate,
                    (SELECT ROUND(COALESCE(SUM(t.status = 'COMPLETED') / NULLIF(COUNT(*), 0), 0) * 100)
                      FROM remediation_tasks t
