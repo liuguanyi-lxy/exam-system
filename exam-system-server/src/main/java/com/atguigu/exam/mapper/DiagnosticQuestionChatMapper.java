@@ -36,8 +36,9 @@ public interface DiagnosticQuestionChatMapper {
     @Select("SELECT COUNT(*) FROM ai_question_chats WHERE exam_record_id = #{recordId} AND question_id = #{questionId} AND status = 'PENDING'")
     int countPending(@Param("recordId") int recordId, @Param("questionId") long questionId);
 
-    @Select("SELECT MAX(created_at) FROM ai_question_chats WHERE exam_record_id = #{recordId} AND question_id = #{questionId}")
-    LocalDateTime latestCreatedAt(@Param("recordId") int recordId, @Param("questionId") long questionId);
+    @Select("SELECT COUNT(*) FROM ai_question_chats WHERE exam_record_id = #{recordId} AND question_id = #{questionId}"
+            + " AND created_at >= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 10 SECOND)")
+    int countRecent(@Param("recordId") int recordId, @Param("questionId") long questionId);
 
     @Select("""
             SELECT COUNT(*) FROM paper_question pq JOIN questions q ON q.id = pq.question_id AND q.is_deleted = 0
