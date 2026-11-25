@@ -47,18 +47,25 @@
 - 考试记录、成绩统计、概览和排行按开考班级快照授权。旧记录需要已关联的账号才能按当前班级归属处理。
 - 隔离后端回归 173 项通过，前端生产构建通过。真实数据库迁移、行锁并发和多账号端到端验收待补。完整验收仍为 0/7。
 
-## M4（考后诊断与逐题追问已接通，环境验收待补）
+## M4（已合并 main（PR #2，`edef6c2`），环境验收待补）
 
 - 整卷诊断：交卷批阅后异步生成结构化报告（`ai_exam_reports` + 轮询 worker）。lease token + claim 保证多实例幂等；失败按 attempts 重试，3 次后 FAILED，可显式 retry 重置。报告叙述复用判分 AI 评语（`exam_records.summary`），评语缺失或判分证据不完整时置信度降级为 LIMITED（不下发参考答案/学员作答），生成失败降级为 DEGRADED 保留分数与知识点指标。报告支持教师/管理员复核（意见不可覆盖他人，重放幂等）。
 - 知识点口径：报告指标在生成时点读取题目-知识点关联并持久化进 `report_json`，即"生成时点快照"；之后题目标签变更不影响已生成报告。retry 重新生成属显式用户行为，将采用当时的最新标注。未依赖额外快照表。
 - 逐题追问（本轮完成）：学员批阅后可对试卷内题目追问（`ai_question_chats`），仅 STUDENT 可提问，教师/管理员可按归属查看。每题上限 20 轮（与前端计数一致），同一时刻每题仅一条 PENDING，提问间隔限频 10 秒；requestId 唯一键幂等（重复提交重放已存在轮次）。生成含题目/参考答案/学员作答/得分/判分反馈与最近 3 轮 READY 上下文（FAILED 轮次不入上下文），prompt 版本 `question-chat-v1`，记录模型与提示词版本，`review_status` 字段为 M6 复核差异预留。AI 空输出视为无效并按失败重试降级；追问前校验题目属于本卷、记录已批阅。
-- 增量 SQL：`sql/2026-11-24_m4_diagnostic_reports.sql`（两张表）为草稿，未在任何环境执行。
+- 增量 SQL：`sql/2026-11-24_m4_diagnostic_reports.sql`（两张表）已于 2026-11-24 在云端 `exam_system` 库执行，`ai_exam_reports`/`ai_question_chats` 建表与索引验证通过。
 - 产品决策（2026-11-24 用户确认）：报告对薄弱知识点的补课建议保留文字描述，真实视频/练习资源关联与可点击推荐留到 M5 补课任务链一并实现（避免提前建知识点-资源映射表后被 M5 表结构推翻）。
-- 验证：隔离后端回归 186 项通过（含 `DiagnosticReportTest` 7 项 + `QuestionChatServiceTest` 6 项，全部为 Mock/隔离测试），前端生产构建通过（仅既有 Sass 弃用与 chunk 体积警告）。以上不含真实数据库、真实 AI 服务或端到端验收；迁移脚本未执行，完整验收仍为 0/7。
+- 验证：隔离后端回归 186 项通过（含 `DiagnosticReportTest` 7 项 + `QuestionChatServiceTest` 6 项，全部为 Mock/隔离测试），前端生产构建通过（仅既有 Sass 弃用与 chunk 体积警告）。迁移 SQL 已在云端执行；真实数据库/AI 服务与端到端验收未做，完整验收仍为 0/7。
 - AI review（2026-11-24）修复 5 项中危 + 2 项低危：①LIMITED 置信度报告统一清空全部题目的参考答案/学员作答（此前仅单题异常时清空）；②追问提示词增加防泄露指令（不逐字输出参考答案、抗提示注入）；③追问 RUNNING 卡死自愈（due/claim 纳入 lease 过期的 RUNNING，对齐报告表）；④并发防护——`ai_question_chats` 增加 (record,question,round_no) 唯一键，ask 冲突后重读计数重试一次，封堵并发突破 20 轮；⑤报告 retry 增加 1 分钟冷却。前端修正知识点得分率百分比换算（后端百分制直接取整）与置信度文案映射（NORMAL→高、LIMITED→低）。未采纳/遗留：`vite.config.js` 的 `envDir:false` 为 M1 隔离构建的有意决策，保留；复核人显示裸用户 ID 留 M6 一并处理。
+- 真实链路验证（2026-11-24，本地后端连云端 MySQL/Redis/DeepSeek）：student1 对 paper 1 走通 开始考试→交卷（5 题 CHOICE，3 对 2 错）→AI 批阅（DeepSeek 真实调用，score=25，评语 513 字）→报告 worker 生成（先 LIMITED 降级：题目无知识点标注，正确触发脱敏；补 2 个知识点关联后重生成 → READY/NORMAL，知识点得分率与薄弱排名、参考答案下发、逐题判定全部正确）→逐题追问（PENDING→worker→READY，AI 正确答出本题未得分与正确项）。越权抽查：student2 访问他人报告 403 ✅；限频抽查：单题生成中再提问被拦（HTTP 200 + code=500「上一条追问仍在生成中」，业务文案正常）✅。countRecent 10 秒冷却在真实 AI 时序（生成约 20 秒）下总是被"单题生成中"检查先拦截，其窗口由单测覆盖。发现并修复两个问题：
+  1. **云端 schema 漂移**：`exam_records` 缺 M3 脚本定义的 `class_id` 列与 `idx_exam_records_class_snapshot` 索引（M3 脚本当时部分执行），交卷即报 Unknown column 'class_id'。已按脚本原文在云端补齐。
+  2. **追问冷却时区 bug**：DB 会话时区为 UTC、JVM 为本地时间，`latestCreatedAt` 读回 UTC 时间与 JVM `now()` 比较，8 小时偏差导致 10 秒冷却永不触发。修复为 SQL 内比较（`countRecent`：`created_at >= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 10 SECOND)`），比较完全留在 DB 侧。隔离回归 186 项全绿。
+  3. 观察项（未改）：业务校验异常（IllegalArgumentException）经全局兜底 handler 返回 HTTP 200 + `code=500` + message，前端按 `code` 字段处理可正常展示文案；语义不理想但属全局历史行为，留后续统一治理。
+  - 验证数据：云端 `ai_exam_reports`/`ai_question_chats` 各 1 条报告与 9 条追问轮次（真实 AI 生成）；测试用知识点 `Java基础语法`/`面向对象` 及关联为验证造数。前端浏览器验证仍未做。
 - 遗留待清理（2026-11-24 用户确认留到 M5）：未跟踪死文件 `exam-system-server/src/main/java/com/atguigu/exam/service/CourseService.java`（空接口无引用，M5 补课任务链实现时一并删除或落实）；`.agents/` 目录暂不处理。
 
 ## 已完成并推送（main 分支，github.com/liuguanyi-lxy/exam-system）
+
+- 2026-11-24：M1–M4 全量经 PR #2 合并 main（merge commit `edef6c2`，功能分支已删除）。M1 班级/知识点、M2 课程章节视频与学习进度、M3 班级考试分配/续考/历史成绩、M4 考后 AI 诊断与逐题追问；共 208 文件 +17281 行。同日云端 `exam_system` 库补齐迁移：经查库确认 M1/M2 主脚本/M3 此前已执行，本轮补执行 `2026-11-24_m2_learning_video_sessions.sql` 与 `2026-11-24_m4_diagnostic_reports.sql`，31 张表就绪。部署 HTTP、真实 AI 链路与端到端验收待补，完整验收仍 0/7。
 
 | 提交 | 内容 |
 | --- | --- |

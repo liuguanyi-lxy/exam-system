@@ -12,8 +12,6 @@ import com.atguigu.exam.vo.QuestionChatRound;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,7 +21,7 @@ import java.util.UUID;
 public class QuestionChatService {
     public static final int MAX_ROUNDS = 20;
     static final String PROMPT_VERSION = "question-chat-v1";
-    static final Duration ASK_COOLDOWN = Duration.ofSeconds(10);
+
 
     private final DiagnosticAccess access;
     private final DiagnosticQuestionChatMapper chats;
@@ -48,8 +46,7 @@ public class QuestionChatService {
             if (chats.countPending(recordId, questionId) > 0) {
                 throw new IllegalArgumentException("上一条追问仍在生成中，请稍候");
             }
-            LocalDateTime latest = chats.latestCreatedAt(recordId, questionId);
-            if (latest != null && latest.isAfter(LocalDateTime.now().minus(ASK_COOLDOWN))) {
+            if (chats.countRecent(recordId, questionId) > 0) {
                 throw new IllegalArgumentException("追问太频繁，请稍候再试");
             }
             if (chats.insert(userId, recordId, questionId, requestId, rounds + 1, request.message()) == 1) {

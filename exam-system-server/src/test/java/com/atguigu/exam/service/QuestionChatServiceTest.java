@@ -82,7 +82,7 @@ class QuestionChatServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.ask(1, 5, 11L, "STUDENT", request()));
 
         when(chats.countPending(1, 5L)).thenReturn(0);
-        when(chats.latestCreatedAt(1, 5L)).thenReturn(LocalDateTime.now().minusSeconds(1));
+        when(chats.countRecent(1, 5L)).thenReturn(1);
         assertThrows(IllegalArgumentException.class, () -> service.ask(1, 5, 11L, "STUDENT", request()));
         verify(chats, never()).insert(anyLong(), anyInt(), anyLong(), anyString(), anyInt(), anyString());
     }
@@ -94,7 +94,7 @@ class QuestionChatServiceTest {
         when(chats.countQuestionInPaper(3, 5L)).thenReturn(1);
         when(chats.countRounds(1, 5L)).thenReturn(0);
         when(chats.countPending(1, 5L)).thenReturn(0);
-        when(chats.latestCreatedAt(1, 5L)).thenReturn(null);
+        when(chats.countRecent(1, 5L)).thenReturn(0);
         when(chats.insert(11L, 1, 5L, requestId.toString(), 1, "为什么错")).thenReturn(1);
         when(chats.byRequest(1, 5L, requestId.toString())).thenReturn(row("PENDING"));
 
@@ -115,7 +115,7 @@ class QuestionChatServiceTest {
         when(chats.countQuestionInPaper(3, 5L)).thenReturn(1);
         when(chats.countRounds(1, 5L)).thenReturn(0, 1);
         when(chats.countPending(1, 5L)).thenReturn(0);
-        when(chats.latestCreatedAt(1, 5L)).thenReturn(null);
+        when(chats.countRecent(1, 5L)).thenReturn(0);
         when(chats.insert(11L, 1, 5L, requestId.toString(), 1, "为什么错")).thenReturn(0);
         when(chats.insert(11L, 1, 5L, requestId.toString(), 2, "为什么错")).thenReturn(1);
         when(chats.byRequest(1, 5L, requestId.toString())).thenReturn(null, row("PENDING"));
