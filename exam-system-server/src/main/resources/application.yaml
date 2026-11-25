@@ -51,6 +51,8 @@ mybatis-plus:
     auto-map-underscore-to-camel-case: true
     # 设置自动映射行为为full，表示自动映射所有非主键的列给JAVA对象的字段，在写mapper.xml文件时，可以省略resultMap标签的result属性,只写主键的属性
     auto-mapping-behavior: full
+    # record（不可变行对象）按参数名做构造器自动映射，需配合编译期 -parameters（spring-boot-starter-parent 默认开启）
+    arg-name-based-constructor-auto-mapping: true
 
 # minio的配置（账号密码在 application-local.yaml 覆盖）
 minio:

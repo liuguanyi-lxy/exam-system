@@ -57,7 +57,25 @@
         </div>
         <div v-if="diagnostic.report.recommendations?.length" class="recommendations">
           <h4>下一步建议</h4>
-          <p v-for="(item, index) in diagnostic.report.recommendations" :key="index">{{ item }}</p>
+          <div v-for="(item, index) in diagnostic.report.recommendations" :key="index" class="recommendation-item">
+            <p>{{ recommendationText(item) }}</p>
+            <!-- M5：建议条目可携带知识点推荐视频，无视频（旧报告/无映射）按纯文字渲染 -->
+            <div v-if="recommendationVideos(item)?.length" class="recommendation-videos">
+              <div
+                v-for="v in recommendationVideos(item)"
+                :key="v.videoId ?? v.fileUrl"
+                class="rec-video-card"
+                @click="openRecommendVideo(v)"
+              >
+                <img v-if="v.coverUrl" :src="v.coverUrl" class="rec-cover" alt="" />
+                <div v-else class="rec-cover rec-cover-fallback">
+                  <el-icon :size="18"><VideoPlay /></el-icon>
+                </div>
+                <span class="rec-title">{{ v.title }}</span>
+                <el-icon class="rec-arrow"><ArrowRight /></el-icon>
+              </div>
+            </div>
+          </div>
         </div>
         <div v-if="canReview" class="review-box">
           <div class="review-state">{{ diagnostic.reviewedAt ? `已由 ${diagnostic.reviewedBy || '教师'}复核` : '教师复核' }}</div>
@@ -152,13 +170,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useExamStore } from '@/stores/exam'
 import { getExamRecordById } from '@/api/examRecord'
 import { getDiagnosticReport, retryDiagnosticReport, reviewDiagnosticReport, getQuestionChats, askQuestionChat } from '@/api/diagnostics'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
+const router = useRouter()
 const examStore = useExamStore()
 const loading = ref(false)
 const grading = ref(false)
@@ -283,6 +302,24 @@ async function handleGrade() {
 
 function confidenceLabel(value) {
   return ({ NORMAL: '高', LIMITED: '低' })[value] || value || '待评估'
+}
+
+// M5 建议条目：新数据为 {text, videos}，历史纯字符串按纯文字兼容
+function recommendationText(item) {
+  return typeof item === 'string' ? item : (item?.text || '')
+}
+
+function recommendationVideos(item) {
+  return typeof item === 'string' ? null : item?.videos
+}
+
+// 有 videoId 走站内视频播放页，否则兜底新窗口打开外链
+function openRecommendVideo(video) {
+  if (video?.videoId) {
+    router.push(`/videos/${video.videoId}`)
+  } else if (video?.fileUrl) {
+    window.open(video.fileUrl, '_blank')
+  }
 }
 
 function percentage(value) {
@@ -509,6 +546,58 @@ onBeforeUnmount(() => {
 .weak-points, .recommendations { margin-top: 16px; h4 { font-size: 13px; margin: 0 0 9px; } }
 .weak-points { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; h4 { width: 100%; } }
 .recommendations p { margin: 6px 0; color: $text-secondary; font-size: 13px; line-height: 1.6; }
+.recommendation-item { margin-bottom: 10px; p { margin: 0 0 6px; } }
+.recommendation-videos { display: flex; flex-wrap: wrap; gap: 8px; }
+.rec-video-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid $border;
+  border-radius: $radius-md;
+  background: #fcfcfd;
+  cursor: pointer;
+  transition: border-color $transition-fast, background $transition-fast;
+  max-width: 320px;
+
+  &:hover {
+    border-color: $primary-lighter;
+    background: $primary-soft;
+    .rec-arrow { color: $primary; }
+  }
+  .rec-cover {
+    flex-shrink: 0;
+    width: 52px;
+    height: 34px;
+    border-radius: $radius-sm;
+    object-fit: cover;
+    background: $bg-soft;
+    &.rec-cover-fallback {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: $text-muted;
+      border: 1px solid $border;
+    }
+  }
+  .rec-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    color: $text-primary;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .rec-arrow {
+    flex-shrink: 0;
+    color: $text-muted;
+    font-size: 13px;
+  }
+}
 .review-box { display: grid; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid $border; }
 .review-state { color: $text-muted; font-size: 12px; }
 .diagnostic-empty { padding-top: 12px; color: $text-muted; font-size: 13px; }

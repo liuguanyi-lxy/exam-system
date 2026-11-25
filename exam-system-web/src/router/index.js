@@ -125,6 +125,18 @@ const routes = [
         component: () => import('@/views/course/CourseLearning.vue'),
         meta: { title: '课程学习', requiresAuth: true, roles: ['STUDENT'] },
       },
+      {
+        path: 'remediation',
+        name: 'RemediationCenter',
+        component: () => import('@/views/remediation/RemediationCenter.vue'),
+        meta: { title: '补课中心', requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
+        path: 'remediation/tasks/:id',
+        name: 'RemediationTaskDetail',
+        component: () => import('@/views/remediation/RemediationTaskDetail.vue'),
+        meta: { title: '补课任务详情', requiresAuth: true, roles: ['STUDENT'] },
+      },
     ],
   },
 

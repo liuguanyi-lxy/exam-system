@@ -1,19 +1,30 @@
 package com.atguigu.exam.service;
 
 import com.atguigu.exam.entity.ExamRecord;
+import com.atguigu.exam.entity.KnowledgePointVideo;
+import com.atguigu.exam.entity.Video;
+import com.atguigu.exam.mapper.KnowledgePointVideoMapper;
+import com.atguigu.exam.mapper.VideoMapper;
 import com.atguigu.exam.vo.DiagnosticReport;
 import com.atguigu.exam.vo.DiagnosticReport.*;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
+@RequiredArgsConstructor
 public class DiagnosticReportBuilder {
     private static final BigDecimal WEAK_THRESHOLD = BigDecimal.valueOf(60);
     private static final String VERSION = "recorded-grades-v1";
+
+    private final KnowledgePointVideoMapper kpVideos;
+    private final VideoMapper videos;
 
     public DiagnosticReport build(ExamRecord record, List<Evidence> evidence, List<Tag> tags) {
         Map<Long, List<Tag>> byQuestion = tags.stream().collect(Collectors.groupingBy(Tag::questionId));
@@ -49,7 +60,7 @@ public class DiagnosticReportBuilder {
         boolean incomplete = questions.isEmpty() || record.getScore() == null || record.getScore() != objective + subjective
                 || questions.stream().anyMatch(QuestionResult::reviewNeeded) || points.isEmpty()
                 || record.getSummary() == null || record.getSummary().contains("AI 评语生成失败");
-        var suggestions = weak.stream().map(point -> "复习“" + point.name() + "”对应视频，再完成该知识点基础练习").toList();
+        var suggestions = buildSuggestions(weak);
         String confidence = incomplete ? "LIMITED" : "NORMAL";
         if (incomplete) {
             // 脱敏口径：置信度受限时不向学生下发参考答案与学员作答
@@ -60,6 +71,36 @@ public class DiagnosticReportBuilder {
         return new DiagnosticReport(record.getScore(), possible, objectiveComplete ? objective : null,
                 subjectiveComplete ? subjective : null, record.getSummary(), confidence,
                 questions, points, weak, suggestions, weak.isEmpty() ? "复习错题后安排阶段复测" : "完成薄弱知识点练习后再复测", VERSION);
+    }
+
+    /**
+     * M5 资源推荐升级：薄弱知识点若在 knowledge_point_videos 有映射且映射视频存在已发布
+     * （videos.status=1）记录，建议条目附带具体视频列表（videoId/title/fileUrl/coverUrl，
+     * 按 sort 升序去重）；否则 videos=null，回退原文字建议。视频本就是学员可见资源，不下发答案解析。
+     */
+    private List<Suggestion> buildSuggestions(List<PointResult> weak) {
+        if (weak.isEmpty()) return List.of();
+        List<Long> pointIds = weak.stream().map(PointResult::id).toList();
+        Map<Long, List<Long>> mappings = kpVideos.selectList(new LambdaQueryWrapper<KnowledgePointVideo>()
+                        .in(KnowledgePointVideo::getKnowledgePointId, pointIds)
+                        .orderByAsc(KnowledgePointVideo::getSort))
+                .stream().filter(mapping -> mapping.getVideoId() != null)
+                .collect(Collectors.groupingBy(KnowledgePointVideo::getKnowledgePointId, LinkedHashMap::new,
+                        Collectors.mapping(KnowledgePointVideo::getVideoId, Collectors.toList())));
+        List<Long> mappedVideoIds = mappings.values().stream().flatMap(List::stream).distinct().toList();
+        Map<Long, Video> published = mappedVideoIds.isEmpty() ? Map.of() : videos.selectList(
+                        new LambdaQueryWrapper<Video>().in(Video::getId, mappedVideoIds)
+                                .eq(Video::getStatus, Video.STATUS_PUBLISHED))
+                .stream().filter(video -> video.getStatus() != null && video.getStatus() == Video.STATUS_PUBLISHED)
+                .collect(Collectors.toMap(Video::getId, Function.identity(), (a, b) -> a));
+        return weak.stream().map(point -> {
+            String text = "复习“" + point.name() + "”对应视频，再完成该知识点基础练习";
+            List<VideoItem> items = mappings.getOrDefault(point.id(), List.of()).stream().distinct()
+                    .map(published::get).filter(Objects::nonNull)
+                    .map(video -> new VideoItem(video.getId(), video.getTitle(), video.getFileUrl(), video.getCoverUrl()))
+                    .toList();
+            return new Suggestion(text, items.isEmpty() ? null : items);
+        }).toList();
     }
 
     private QuestionResult question(Evidence row, boolean ambiguous) {
