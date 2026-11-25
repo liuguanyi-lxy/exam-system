@@ -279,6 +279,12 @@ const routes = [
         component: () => import('@/views/knowledge-point/KnowledgePointManage.vue'),
         meta: { title: '知识点管理' },
       },
+      {
+        path: 'remediation-overview',
+        name: 'RemediationOverview',
+        component: () => import('@/views/remediation/RemediationOverview.vue'),
+        meta: { title: '补课概览' },
+      },
     ],
   },
 

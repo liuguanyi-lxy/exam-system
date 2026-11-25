@@ -59,10 +59,11 @@
         </template>
       </el-table-column>
       <el-table-column prop="updatedAt" label="最近更新" width="170" />
-      <el-table-column label="操作" width="250" fixed="right">
+      <el-table-column label="操作" width="310" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openAssign(row)">{{ canEdit(row) ? '分配班级' : '查看分配' }}</el-button>
           <el-button link type="primary" @click="openProgress(row)">学习情况</el-button>
+          <el-button link type="primary" @click="openConfigDialog(row)">补课策略</el-button>
           <el-dropdown v-if="canEdit(row)" @command="(command) => handleCourseCommand(command, row)">
             <el-button link type="primary">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
@@ -155,6 +156,43 @@
       </el-table>
       <template #footer><el-button @click="progressVisible = false">关闭</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="configDialogVisible" :title="`补课策略 · ${configCourse?.name || ''}`" width="560px" destroy-on-close>
+      <el-alert
+        :title="configEchoed
+          ? '以下为本次登录会话内最近保存的配置（后端暂无配置查询接口）'
+          : '该课程在本次会话内尚未保存过配置；未单独配置的课程生成补课任务时将采用系统默认值'"
+        type="info" show-icon :closable="false" class="config-tip"
+      />
+      <el-form ref="configFormRef" :model="configForm" :rules="configRules" label-width="110px">
+        <el-form-item label="最低掌握度" prop="minMastery">
+          <el-input-number v-model="configForm.minMastery" :min="0" :max="100" :precision="0" controls-position="right" />
+          <span class="form-hint">0-100，复测达到该阈值即完成任务</span>
+        </el-form-item>
+        <el-form-item label="练习题数" prop="practiceCount">
+          <el-input-number v-model="configForm.practiceCount" :min="1" :max="50" :precision="0" controls-position="right" />
+          <span class="form-hint">1-50，基础练习补课题数</span>
+        </el-form-item>
+        <el-form-item label="复测题数" prop="retestCount">
+          <el-input-number v-model="configForm.retestCount" :min="1" :max="50" :precision="0" controls-position="right" />
+          <span class="form-hint">1-50，复测抽题数</span>
+        </el-form-item>
+        <el-form-item label="强制复测" prop="forceRetest">
+          <el-switch v-model="configForm.forceRetest" active-text="复测达标才算完成" />
+        </el-form-item>
+        <el-form-item label="允许跳视频" prop="allowSkipVideo">
+          <el-switch v-model="configForm.allowSkipVideo" active-text="可直接做练习/复测" />
+        </el-form-item>
+        <el-form-item label="截止天数" prop="dueDays">
+          <el-input-number v-model="configForm.dueDays" :min="1" :max="365" :precision="0" controls-position="right" />
+          <span class="form-hint">1-365，任务默认截止天数</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="configDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="configSaving" @click="saveConfig">保存策略</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -169,6 +207,7 @@ import {
   assignCourseClasses, createCourse, deleteCourse, getCourseClasses, getCourseClassProgress,
   getCourseList, updateCourse, updateCourseStatus,
 } from '@/api/course'
+import { saveRemediationConfig } from '@/api/remediation'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -203,6 +242,22 @@ const progressCourse = ref(null)
 const progressClasses = ref([])
 const progressClassId = ref(null)
 const progressStudents = ref([])
+
+// 补课策略：后端无配置查询接口，保存结果在本会话内缓存回显；未配置时任务生成用系统默认值
+const DEFAULT_CONFIG = { minMastery: 60, practiceCount: 5, retestCount: 5, forceRetest: true, allowSkipVideo: false, dueDays: 14 }
+const configDialogVisible = ref(false)
+const configSaving = ref(false)
+const configEchoed = ref(false)
+const configCourse = ref(null)
+const configFormRef = ref()
+const configForm = reactive({ ...DEFAULT_CONFIG })
+const configCache = new Map()
+const configRules = {
+  minMastery: [{ required: true, message: '请填写最低掌握度', trigger: 'blur' }],
+  practiceCount: [{ required: true, message: '请填写练习题数', trigger: 'blur' }],
+  retestCount: [{ required: true, message: '请填写复测题数', trigger: 'blur' }],
+  dueDays: [{ required: true, message: '请填写截止天数', trigger: 'blur' }],
+}
 
 async function loadCourses() {
   loading.value = true
@@ -388,6 +443,38 @@ async function loadProgress() {
   }
 }
 
+function openConfigDialog(course) {
+  configCourse.value = course
+  const cached = configCache.get(course.id)
+  Object.assign(configForm, cached || DEFAULT_CONFIG)
+  configEchoed.value = !!cached
+  configDialogVisible.value = true
+}
+
+async function saveConfig() {
+  const valid = await configFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  configSaving.value = true
+  const payload = {
+    minMastery: configForm.minMastery,
+    practiceCount: configForm.practiceCount,
+    retestCount: configForm.retestCount,
+    forceRetest: configForm.forceRetest,
+    allowSkipVideo: configForm.allowSkipVideo,
+    dueDays: configForm.dueDays,
+  }
+  try {
+    await saveRemediationConfig(configCourse.value.id, payload)
+    configCache.set(configCourse.value.id, { ...payload })
+    ElMessage.success('补课策略已保存')
+    configDialogVisible.value = false
+  } catch {
+    // 请求拦截器负责展示接口错误。
+  } finally {
+    configSaving.value = false
+  }
+}
+
 onMounted(loadCourses)
 </script>
 
@@ -415,6 +502,8 @@ onMounted(loadCourses)
   .class-option-main small { color: $text-muted; }
   .progress-filter { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; color: $text-secondary; }
   .username { display: block; margin-top: 3px; }
+  .config-tip { margin-bottom: 18px; }
+  .el-input-number + .form-hint { margin-left: 12px; }
   :deep(.danger-item) { color: $danger; }
 }
 
