@@ -52,6 +52,10 @@
           <el-icon><Reading /></el-icon>
           <span>课程管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/remediation-overview">
+          <el-icon><TrendCharts /></el-icon>
+          <span>补课概览</span>
+        </el-menu-item>
         <el-menu-item index="/admin/exam-records">
           <el-icon><DataAnalysis /></el-icon>
           <span>考试记录</span>

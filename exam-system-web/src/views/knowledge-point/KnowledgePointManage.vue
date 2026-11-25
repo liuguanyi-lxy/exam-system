@@ -27,7 +27,7 @@
       </el-table-column>
       <el-table-column prop="questionCount" label="引用题目数" width="110" align="center" />
       <el-table-column prop="createTime" label="创建时间" width="160" />
-      <el-table-column label="操作" width="230" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row, $index }">
           <el-button size="small" link type="primary" :disabled="!canMove($index, -1)" @click="move($index, -1)">
             <el-icon><Top /></el-icon>上移
@@ -36,6 +36,7 @@
             <el-icon><Bottom /></el-icon>下移
           </el-button>
           <el-button size="small" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" link type="primary" @click="openVideoDialog(row)">推荐视频</el-button>
           <el-button size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -65,6 +66,37 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 推荐视频维护（M5 补课视频映射） -->
+    <el-dialog v-model="videoDialogVisible" :title="`推荐视频 · ${videoPoint?.name || ''}`" width="640px" destroy-on-close>
+      <el-alert
+        title="保存为整体替换：按选择顺序覆盖该知识点当前的推荐视频；清空后提交即解除全部映射。仅列出已发布视频。"
+        type="info" show-icon :closable="false" class="video-tip"
+      />
+      <el-form label-width="80px">
+        <el-form-item label="推荐视频">
+          <el-select
+            v-model="videoForm.videoIds" multiple filterable remote :remote-method="searchVideoOptions"
+            :loading="videoOptionsLoading" :remote-show-suffix="true"
+            placeholder="搜索视频标题并选择，按选择顺序保存" style="width: 100%"
+          >
+            <el-option v-for="v in videoOptions" :key="v.id" :label="v.title" :value="v.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div v-if="videoForm.videoIds.length" class="selected-order">
+        <p>保存顺序（从上到下 = 推荐顺序 0..{{ videoForm.videoIds.length - 1 }}）：</p>
+        <ol>
+          <li v-for="(id, idx) in videoForm.videoIds" :key="`${id}-${idx}`">
+            {{ videoTitleMap.get(id) || `视频 #${id}` }}
+          </li>
+        </ol>
+      </div>
+      <template #footer>
+        <el-button @click="videoDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="videoSaving" @click="saveVideos">保存映射</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -73,8 +105,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getKnowledgePointList, createKnowledgePoint, updateKnowledgePoint,
-  deleteKnowledgePoint, sortKnowledgePoints,
+  deleteKnowledgePoint, sortKnowledgePoints, setKnowledgePointVideos,
 } from '@/api/knowledgePoint'
+import { getAdminVideos } from '@/api/videoAdmin'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -149,6 +182,55 @@ async function handleDelete(row) {
   loadData()
 }
 
+// ========== 推荐视频维护（后端无映射查询接口，打开时为空选；保存即整体替换） ==========
+const videoDialogVisible = ref(false)
+const videoSaving = ref(false)
+const videoPoint = ref(null)
+const videoForm = reactive({ videoIds: [] })
+const videoOptions = ref([])
+const videoOptionsLoading = ref(false)
+const videoTitleMap = reactive(new Map())
+
+function openVideoDialog(row) {
+  videoPoint.value = row
+  videoForm.videoIds = []
+  videoTitleMap.clear()
+  videoDialogVisible.value = true
+  searchVideoOptions('')
+}
+
+async function searchVideoOptions(query = '') {
+  videoOptionsLoading.value = true
+  try {
+    // 已发布（status=1）视频才是学员补课可观看的内容
+    const res = await getAdminVideos({
+      page: 1, size: 50, status: 1,
+      keyword: query.trim() || undefined,
+    })
+    const records = res?.records || []
+    records.forEach((v) => videoTitleMap.set(v.id, v.title))
+    // 已选中但不在当前搜索结果里的项保留占位，避免回显成裸 ID
+    const placeholders = videoForm.videoIds
+      .filter((id) => !records.some((v) => v.id === id))
+      .map((id) => ({ id, title: videoTitleMap.get(id) || `视频 #${id}` }))
+    videoOptions.value = [...records, ...placeholders]
+  } catch {
+    videoOptions.value = []
+  } finally {
+    videoOptionsLoading.value = false
+  }
+}
+
+async function saveVideos() {
+  if (!videoPoint.value) return
+  videoSaving.value = true
+  try {
+    const items = await setKnowledgePointVideos(videoPoint.value.id, videoForm.videoIds)
+    ElMessage.success(items.length ? `已保存 ${items.length} 个推荐视频` : '已清空推荐视频')
+    videoDialogVisible.value = false
+  } catch {} finally { videoSaving.value = false }
+}
+
 // 上移 / 下移：与相邻行交换 sort 值后整对提交
 function canMove(index, direction) {
   const row = tableData.value[index]
@@ -178,5 +260,17 @@ onMounted(loadData)
   margin-left: 10px;
   font-size: 12.5px;
   color: $text-muted;
+}
+
+.video-tip { margin-bottom: 18px; }
+
+.selected-order {
+  padding: 12px 14px;
+  border: 1px dashed $border;
+  border-radius: $radius-md;
+
+  p { margin: 0 0 8px; font-size: 13px; color: $text-secondary; }
+  ol { margin: 0; padding-left: 22px; }
+  li { font-size: 13px; line-height: 1.9; color: $text-primary; }
 }
 </style>

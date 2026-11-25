@@ -29,3 +29,15 @@ export function getRemediationPaper(id, step) {
 export function submitRemediationStep(id, step, answers) {
   return request.post(`/api/remediation/tasks/${id}/${STEP_PATHS[step]}`, { answers })
 }
+
+// ========== 教师/管理员侧（M5 第 5 步） ==========
+
+/** PUT /api/remediation/config/{courseId} — 课程级补课策略整体替换（全量字段必填，范围校验在后端） */
+export function saveRemediationConfig(courseId, data) {
+  return request.put(`/api/remediation/config/${courseId}`, data)
+}
+
+/** GET /api/remediation/overview?classId= — 班级补课概览：汇总 + 学员明细 + 薄弱知识点排行（TEACHER 限带班） */
+export function getRemediationOverview(classId) {
+  return request.get('/api/remediation/overview', { params: { classId } })
+}

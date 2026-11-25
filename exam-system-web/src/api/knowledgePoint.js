@@ -34,3 +34,8 @@ export function sortKnowledgePoints(items) {
 export function setQuestionKnowledgePoints(questionId, knowledgePointIds) {
   return request.put(`/api/questions/${questionId}/knowledge-points`, { knowledgePointIds })
 }
+
+/** PUT /api/knowledge-points/{id}/videos 整体替换知识点推荐视频（videoIds 去重保序，空数组=清空） */
+export function setKnowledgePointVideos(pointId, videoIds) {
+  return request.put(`/api/knowledge-points/${pointId}/videos`, { videoIds })
+}
