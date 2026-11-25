@@ -56,6 +56,10 @@
           <el-icon><TrendCharts /></el-icon>
           <span>补课概览</span>
         </el-menu-item>
+        <el-menu-item index="/admin/teaching-stats">
+          <el-icon><Monitor /></el-icon>
+          <span>教学统计</span>
+        </el-menu-item>
         <el-menu-item index="/admin/exam-records">
           <el-icon><DataAnalysis /></el-icon>
           <span>考试记录</span>
