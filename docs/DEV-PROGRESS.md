@@ -73,8 +73,9 @@
 - 产品决策（2026-11-25 用户拍板）：策略配置课程级，但试卷/考试记录无课程关联——**开考班级经 course_classes 只分配一门课程时用该课程配置，多门/无课程用内置默认值**（60/5/5/强制复测/不跳视频/14 天），生成时快照进 `config_snapshot`，后续改配置不影响已生成任务。
 - 前端：补课中心列表（状态筛选/掌握度进度条/逾期红标）+ 任务详情四步 Steps 交互 + 练习共用组件（脱敏作答、AI 反馈、再练一轮）；路由与菜单限 STUDENT；ExamResult 报告页视频卡片兼容渲染（跳站内 `/videos/:id`）。
 - AI review（2026-11-25，docs/review-m5-remediation.md）：P0×0；修复 P1（并发整轮重复提交时 upsert 以 accuracy=0 覆盖既有掌握度/复测分——totalCount=0 跳过联动回显 DB 值）与 P2（AI 主观题判分移出事务，TransactionTemplate 单事务落库）；P3×7 记录不修（部分提交口径、复测用正确率而非分值加权、列表阈值硬编码 60 等）。
-- 增量 SQL：`sql/2026-11-25_m5_remediation.sql`（5 张表）**尚未执行**，执行前先查目标库当前状态、不可重复执行。
-- 验证：隔离后端回归 221 项全绿（基线 186 → +35），前端 `npm run build` 通过。真实数据库迁移、AI 判分链路与端到端验收待补；教师侧三个接口暂无前端入口（API 可用），需要时再补页面。
+- 增量 SQL：`sql/2026-11-25_m5_remediation.sql`（5 张表）已于 2026-11-25 在云端 `exam_system` 库执行，5 张表与全部唯一键（uk_kp_video/uk_course_config/uk_task_user_kp_record/uk_item_task_step_q_round/uk_mastery_user_kp）验证就绪。
+- 验证：隔离后端回归 221 项全绿（基线 186 → +35），前端 `npm run build` 通过。真实数据库迁移已执行；AI 判分链路与端到端验收待补。
+- 教师侧前端（2026-11-25，PR #6 `e9a2fa6`）：课程管理页"补课策略"对话框、知识点管理页"推荐视频"多选维护、管理后台"补课概览"页（汇总/学员明细/薄弱排行，`/admin/remediation-overview`）；视频选择器复用既有 `GET /api/admin/videos`，零后端改动。已知取舍：后端无配置/映射查询接口，对话框打开时不回显（保存后会话内缓存），需要时补 GET 端点。
 
 ## 已完成并推送（main 分支，github.com/liuguanyi-lxy/exam-system）
 
