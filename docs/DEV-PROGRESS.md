@@ -76,6 +76,8 @@
 - 增量 SQL：`sql/2026-11-25_m5_remediation.sql`（5 张表）已于 2026-11-25 在云端 `exam_system` 库执行，5 张表与全部唯一键（uk_kp_video/uk_course_config/uk_task_user_kp_record/uk_item_task_step_q_round/uk_mastery_user_kp）验证就绪。
 - 验证：隔离后端回归 221 项全绿（基线 186 → +35），前端 `npm run build` 通过。真实数据库迁移已执行；AI 判分链路与端到端验收待补。
 - 教师侧前端（2026-11-25，PR #6 `e9a2fa6`）：课程管理页"补课策略"对话框、知识点管理页"推荐视频"多选维护、管理后台"补课概览"页（汇总/学员明细/薄弱排行，`/admin/remediation-overview`）；视频选择器复用既有 `GET /api/admin/videos`，零后端改动。已知取舍：后端无配置/映射查询接口，对话框打开时不回显（保存后会话内缓存），需要时补 GET 端点。
+- 真实链路验证（2026-11-25，本地后端连云端 MySQL/Redis/DeepSeek + 浏览器走查）：教师侧走真实 API 配置课程策略（PUT config：60/3/3/强制复测/不跳视频/14天）与知识点视频映射；student1 走通 开考（班级分配快照 class_id=1）→交卷（故意 3 错锁定薄弱点口径）→AI 批阅→报告 READY→自动生成任务链（数量=薄弱点数，config_snapshot 与课程配置逐字段一致，due_time=+14 天）。薄弱点口径验证：KP1 得分率 80% 不算薄弱、KP2 0% 算薄弱 → 仅生成 KP2 任务，符合"低得分率才建链"。四步链全程验证：视频门禁未完成时取练习被拦（"请先完成视频学习"）→外链视频 60 秒心跳+确认完成（M2 口径，videoDone=1, total=40）→练习 3 题（2/3 对）→total=40+33×0.6=59.8 精确吻合→变式（练习已用 5 题仅剩 1<3，insufficient=true 回退全池）→复测全对→total=20+67×0.3+100×0.5=90.1，≥60 任务 COMPLETED；重复提交复测被拦（"当前没有待作答的题目"）幂等 ✓。默认策略路径：无班学员 student3 走通全链，2 任务快照为内置默认 5/5/60/强制/不跳/14 天 ✓。报告 retry 只对 FAILED 生效（READY 报告不能 retry，M4 时代旧报告不回溯生成任务，行为正确）。越权抽查：student2 访问他人任务 403 ✓。教师概览 API 数字与库一致，浏览器验证补课中心（任务卡/掌握度 90%）、任务详情四步 Steps、报告页视频推荐卡片（生成时点映射快照）全部正常。发现并修复 1 个 P1 bug：**取题响应 choices 恒为空**——`selectPoolQuestions` 池 SQL 只查 `q.*`，新选题路径未按 id 补全选项即脱敏下发（余题返回路径有 loadQuestions 故单测未拦住）；修复为新选题同样走 `loadQuestions` 补全（隔离回归 221 项全绿，新选题路径测试补选项断言）。观察项（未改）：教师概览页首次进入偶现统计 0（班级下拉异步加载与首次查询的时序竞态），刷新后正常。
+  - 验证造数（云端 exam_system）：班级"M5验证班"（teacher1+student1+student2）、课程"M5验证课程"（PUBLISHED，分配该班）、exam_classes 分配试卷 1（窗口 7 天/10 次）、KP1 补 7 题/KP2 补 4 题标注、课程章节挂视频 19/24、B 站外链视频"M5验证外链视频"（白名单不含 YouTube，种子外链不可学）。
 
 ## 已完成并推送（main 分支，github.com/liuguanyi-lxy/exam-system）
 

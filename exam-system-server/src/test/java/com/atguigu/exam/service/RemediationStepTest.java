@@ -199,10 +199,13 @@ class RemediationStepTest {
         when(items.selectList(any())).thenReturn(List.of());
         when(items.selectPoolQuestions(eq(POINT_ID), eq(List.of()), eq(5)))
                 .thenReturn(List.of(choiceQuestion(201L), choiceQuestion(202L)));
+        stubQuestions(List.of(choiceQuestion(201L), choiceQuestion(202L)));
 
         var paper = service.paper(TASK_ID, USER_ID, "STUDENT", RemediationStepService.STEP_PRACTICE);
         assertEquals(2, paper.roundNo());
         assertFalse(paper.insufficient());
+        // 新选题路径同样按 id 补全选项后再脱敏下发（池 SQL 不带选项）
+        assertEquals("选项A", paper.questions().get(0).choices().get(0).content());
         verify(items).insertIgnore(TASK_ID, "PRACTICE", 2, 201L);
         verify(items).insertIgnore(TASK_ID, "PRACTICE", 2, 202L);
     }
@@ -214,6 +217,7 @@ class RemediationStepTest {
         when(items.selectList(any())).thenReturn(List.of());
         when(items.selectPoolQuestions(eq(POINT_ID), eq(List.of()), eq(5)))
                 .thenReturn(List.of(choiceQuestion(301L)));
+        stubQuestions(List.of(choiceQuestion(301L)));
 
         var paper = service.paper(TASK_ID, USER_ID, "STUDENT", RemediationStepService.STEP_RETEST);
         assertEquals(1, paper.roundNo());
@@ -233,6 +237,7 @@ class RemediationStepTest {
         List<Long> used = List.of(101L, 102L);
         when(items.countPoolQuestions(POINT_ID, used)).thenReturn(8);
         when(items.selectPoolQuestions(POINT_ID, used, 5)).thenReturn(List.of(choiceQuestion(401L)));
+        stubQuestions(List.of(choiceQuestion(401L)));
 
         var paper = service.paper(TASK_ID, USER_ID, "STUDENT", RemediationStepService.STEP_VARIATION);
         assertFalse(paper.insufficient());
@@ -248,6 +253,7 @@ class RemediationStepTest {
         when(items.countPoolQuestions(POINT_ID, used)).thenReturn(2);
         when(items.selectPoolQuestions(POINT_ID, List.of(), 5))
                 .thenReturn(List.of(choiceQuestion(501L), choiceQuestion(502L)));
+        stubQuestions(List.of(choiceQuestion(501L), choiceQuestion(502L)));
 
         var paper = service.paper(TASK_ID, USER_ID, "STUDENT", RemediationStepService.STEP_VARIATION);
         assertTrue(paper.insufficient());
