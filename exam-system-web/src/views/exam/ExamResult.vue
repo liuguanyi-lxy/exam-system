@@ -173,6 +173,7 @@ import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useExamStore } from '@/stores/exam'
 import { getExamRecordById } from '@/api/examRecord'
+import { gradeExam as gradeExamApi } from '@/api/exam'
 import { getDiagnosticReport, retryDiagnosticReport, reviewDiagnosticReport, getQuestionChats, askQuestionChat } from '@/api/diagnostics'
 import { useUserStore } from '@/stores/user'
 
@@ -294,7 +295,8 @@ function usedMinutes(start, end) {
 async function handleGrade() {
   grading.value = true
   try {
-    result.value = await examStore.gradeExam()
+    // 直接按记录ID触发判卷，不依赖进行中的考试会话（从历史记录进入也能兜底重判）
+    result.value = await gradeExamApi(recordId.value)
     examStore.reset()
     await loadDiagnostic()
   } finally { grading.value = false }
@@ -429,7 +431,14 @@ onMounted(async () => {
   loading.value = true
   try {
     const record = await getExamRecordById(Number(route.params.recordId))
-    if (record?.status === '已批阅' || record?.score !== null) { result.value = record }
+    if (record?.status === '已批阅') {
+      result.value = record
+    } else if (record?.status === '已结束') {
+      // 交卷后未判卷：结果页自动触发判卷（判卷接口幂等，已批阅的记录直接返回）。
+      // 不能用 score 判断是否已出分：数据库 score 默认 0，未判卷记录也会被误当成已批阅，
+      // 导致判卷请求永远不会发出、答题记录停留在 is_correct=0 被展示成全部错误
+      result.value = await gradeExamApi(Number(route.params.recordId))
+    }
     if (result.value) await loadDiagnostic()
   } finally { loading.value = false }
 })
