@@ -30,6 +30,8 @@
           >我的班级</router-link>
           <router-link v-if="userStore.isStudent" to="/my/courses" class="nav-item"
             :class="{ active: isActive('/my/courses') }">我的课程</router-link>
+          <router-link v-if="userStore.isStudent" to="/remediation" class="nav-item"
+            :class="{ active: isActive('/remediation') }">补课中心</router-link>
           <router-link to="/videos" class="nav-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
           <router-link to="/ranking" class="nav-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
         </nav>
@@ -51,6 +53,9 @@
                   </el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/my/courses')">
                     <el-icon><Reading /></el-icon> 我的课程
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/remediation')">
+                    <el-icon><Reading /></el-icon> 补课中心
                   </el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isStudent" @click="$router.push('/wrong-questions')">
                     <el-icon><Collection /></el-icon> 错题本
@@ -109,6 +114,8 @@
           </router-link>
           <router-link v-if="userStore.isStudent" to="/my/courses" class="mobile-item"
             :class="{ active: isActive('/my/courses') }"><el-icon><Reading /></el-icon> 我的课程</router-link>
+          <router-link v-if="userStore.isStudent" to="/remediation" class="mobile-item"
+            :class="{ active: isActive('/remediation') }"><el-icon><Reading /></el-icon> 补课中心</router-link>
           <router-link to="/videos" class="mobile-item" :class="{ active: isActive('/videos') }">视频中心</router-link>
           <router-link to="/ranking" class="mobile-item" :class="{ active: isActive('/ranking') }">排行榜</router-link>
           <div class="mobile-divider"></div>

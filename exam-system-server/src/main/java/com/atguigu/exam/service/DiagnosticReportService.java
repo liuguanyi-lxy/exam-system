@@ -22,6 +22,7 @@ public class DiagnosticReportService {
     private final DiagnosticReportMapper reports;
     private final ExamRecordMapper records;
     private final DiagnosticReportBuilder builder;
+    private final RemediationTaskService remediation;
     private final ObjectMapper json;
 
     public DiagnosticReport.View get(int recordId, Long userId, String role) {
@@ -53,6 +54,12 @@ public class DiagnosticReportService {
             var report = builder.build(record, reports.evidence(recordId), reports.tags(record.getExamId()));
             reports.finish(recordId, token, "LIMITED".equals(report.confidence()) ? "DEGRADED" : "READY",
                     json.writeValueAsString(report));
+            // 报告已落库后再生成补课任务链；失败只记日志降级，retry 报告即可重建
+            try {
+                remediation.onReportReady(record, report);
+            } catch (Exception taskFailure) {
+                log.warn("考试记录 {} 补课任务生成失败（报告已就绪）", recordId, taskFailure);
+            }
         } catch (Exception failure) {
             log.warn("考试记录 {} 生成诊断失败，类型 {}", recordId, failure.getClass().getSimpleName());
             reports.fail(recordId, token);

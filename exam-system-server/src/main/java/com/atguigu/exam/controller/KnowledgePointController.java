@@ -4,8 +4,11 @@ import com.atguigu.exam.annotation.RequireRole;
 import com.atguigu.exam.common.Result;
 import com.atguigu.exam.entity.KnowledgePoint;
 import com.atguigu.exam.service.KnowledgePointService;
+import com.atguigu.exam.service.RemediationTeacherService;
 import com.atguigu.exam.vo.KnowledgePointItemVo;
 import com.atguigu.exam.vo.KnowledgePointSortVo;
+import com.atguigu.exam.vo.KnowledgePointVideosVo;
+import com.atguigu.exam.vo.RemediationTeacherView;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -32,6 +35,9 @@ public class KnowledgePointController {
 
     @Autowired
     private KnowledgePointService knowledgePointService;
+
+    @Autowired
+    private RemediationTeacherService remediationTeacherService;
 
     /**
      * 知识点分页列表（管理页）：sort 升序、id 升序；附 questionCount 引用计数
@@ -110,5 +116,22 @@ public class KnowledgePointController {
     public Result<Void> sortKnowledgePoints(@RequestBody List<KnowledgePointSortVo> items) {
         knowledgePointService.sortBatch(items);
         return Result.success(null, "排序已保存");
+    }
+
+    /**
+     * 知识点视频映射维护（M5 第 5 步）：整体替换推荐视频，口径同题目标注接口
+     * （角色沿用类级 TEACHER/ADMIN；videoIds 去重保序，空数组=清空映射；任一视频不存在整批拒绝）
+     */
+    @PutMapping("/{id}/videos")
+    @Operation(summary = "维护知识点视频映射", description = "整体替换知识点推荐视频；videoIds 去重保序，空数组清空映射；视频不存在整批拒绝")
+    public Result<List<RemediationTeacherView.KpVideoItem>> setKnowledgePointVideos(
+            @Parameter(description = "知识点ID") @PathVariable Long id,
+            @RequestBody KnowledgePointVideosVo body,
+            jakarta.servlet.http.HttpServletRequest request) {
+        Long operatorId = (Long) request.getAttribute("userId");
+        List<RemediationTeacherView.KpVideoItem> items = remediationTeacherService.replacePointVideos(
+                id, body == null ? null : body.getVideoIds(), operatorId);
+        log.info("知识点视频映射替换完成：pointId={} 共 {} 个视频，操作人 {}", id, items.size(), operatorId);
+        return Result.success(items, "视频映射已保存");
     }
 }
