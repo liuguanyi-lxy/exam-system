@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { startExam as startExamApi, submitExam as submitExamApi, gradeExam as gradeExamApi } from '@/api/exam'
+import { startExam as startExamApi, submitExam as submitExamApi } from '@/api/exam'
 import { getPaperById } from '@/api/paper'
 
 const EXAM_SESSION_KEY = 'exam-taking-state'
@@ -112,11 +112,6 @@ export const useExamStore = defineStore('exam', {
       this.currentExam.isSubmitted = true
       this.stopTimer()
       this.clearSession()
-    },
-
-    async gradeExam() {
-      if (!this.currentExam) return null
-      return await gradeExamApi(this.currentExam.recordId)
     },
 
     startTimer() {
