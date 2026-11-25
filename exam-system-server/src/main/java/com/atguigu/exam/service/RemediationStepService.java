@@ -88,8 +88,11 @@ public class RemediationStepService {
         for (Question q : selection.questions()) {
             items.insertIgnore(taskId, step, nextRound, q.getId());
         }
+        // 池 SQL 只查题目行不带选项，须按 id 补全选项/答案后再脱敏下发（否则选项恒为空）
+        List<Question> loaded = loadQuestions(selection.questions().stream()
+                .map(Question::getId).toList());
         return new RemediationStepView.PracticePaper(step, nextRound, selection.insufficient(),
-                sanitizeAll(selection.questions()));
+                sanitizeAll(loaded));
     }
 
     // ========== 提交判分 ==========
