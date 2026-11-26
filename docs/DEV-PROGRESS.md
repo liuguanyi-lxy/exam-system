@@ -1,7 +1,7 @@
 # 开发进度快照
 
 > 用途：跨会话保留开发进度。恢复开发前先读本文件与 git log，再继续。
-> 最后更新：2026-11-25
+> 最后更新：2026-11-26
 
 ## M1（已发布到功能分支，环境验收待补）
 
@@ -86,7 +86,15 @@
 - 真实链路验证（2026-11-25，本地后端 8081 连云端库，teacher1）：单班聚合接口与 SQL 直查逐指标一致（studentCount=2、active=1、graded=1、avgScore=20.0、passRate=0、高频错题 1004/3006/3007 各错 1 次、reportTotal=1、remediationCompletionRate=100）✅。**发现并修复 1 个 P0**：`compareClasses` 的 passRate 标量子查询少一个右括号 → `/compare` 必现 500；单测 Mock 了 Mapper 不跑真实 SQL 所以没拦住——**@Select 注解 SQL 的语法正确性只能靠真实链路验证兜底**（修复于 PR #11）。验证顺带发现 IDE 里驻留的旧版 8080 后端无 M6 接口（404），本地验证用 8081 新构建。
 - 同日修复考试判卷触发回归（PR #10，`528c338`）：交卷后记录停在「已结束」且**判卷从未被触发**——结果页用 `score !== null` 判断已出分，而 `exam_records.score` 默认 0（非 NULL）恒为真，未判卷答题记录 `is_correct` 默认 0 被前端渲染成「全部错误」、且未批阅不下发答案。修复：结果页按状态「已结束」自动调 `/grade`（幂等），兜底重判改按 recordId 调 API。真实链路复验：卡住的记录 54 补触发判卷出分 74（11/15 对），选项内容型答案匹配判分全部正确，主观题 AI 反馈正常 ✅。
 
-## 已完成并推送（main 分支，github.com/liuguanyi-lxy/exam-system）
+## M7（已合并 main（PR #12，`2dc0ace`），M1–M7 全部完成）
+
+- 测试补齐：236 → 249 用例全绿（+13）。三块：考前答案泄露回归（`ExamRecordDetailSanitizeTest` 5 项：未批阅不下发答案/解析/选项对错、已批阅可见、教师不脱敏、非本人拒绝）；AI 批卷失败降级链路（`ExamGradeFallbackTest` 3 项：批量失败回退单题、单题失败留可识别标记不阻断整卷、总评失败兜底文案）；`@RequireRole` 角色拦截（`AuthInterceptorRoleTest` 4 项，此前只有匿名拦截覆盖）+ 报告 retry 重入队流转 1 项。九项 M7 专项与用例的映射沉淀在 `docs/test-inventory.md`。
+- 部署交付：空库 `exam_system_demo` 从建库 → schema → 演示数据 → war 打包 → 启动 → 三角色冒烟完整演练通过（学员考试自动判卷 100 分、中文答案判卷全对、教师统计、管理员班级列表）。演示数据脚本 `sql/2026-11-26_m7_demo_data.sql`（演示班 + 5 账号 + 课程/试卷/考试）。`application.yaml` 数据库库名改为 `${DB_NAME}` 占位。
+- 演练抓出 4 个部署陷阱，已回写 `docs/DEPLOY.md`：①全量 schema 与增量脚本有重叠，初始化必须二分——新库走「schema 全量 + 数据脚本」路径 A，旧库升级才走路径 B 增量；②war 会把 gitignored 的 `application-local.yaml` 打进去且默认激活，交付机器必须用环境变量覆盖（DB_HOST/DB_NAME/JWT_SECRET）；③`DB_HOST` 缺省 localhost 指向本机而非云端；④缺 `JWT_SECRET` 时拒绝启动（安全基线，符合预期）。
+- 结果页展示题干（用户需求）：批阅后逐题答案对照上方新增题干行，前端 ExamResult.vue 零后端改动。
+- 踩坑沉淀：**本机 hosts 被 Watt Toolkit（Steam++）加速功能写入 30+ 条 GitHub 域名 → 127.0.0.1 屏蔽条目，退出加速未还原，git 推送全部失败**（浏览器不受影响是因为其加密 DNS 绕过 hosts，git 直读 hosts）。排查顺序：代理端口监听 → 代理软件进程 → Nano 客户端设置页读出本地端口 65532 → `Resolve-DnsName github.com` 解析到 127.0.0.1 定位 hosts。已清理（备份在管理员 TEMP/hosts.bak）；注意再次打开 Watt Toolkit 加速会重新写入，用完需「停止加速」。教训：git 推送失败先查 `Resolve-DnsName`，别只盯着代理。
+
+
 
 - 2026-11-24：M1–M4 全量经 PR #2 合并 main（merge commit `edef6c2`，功能分支已删除）。M1 班级/知识点、M2 课程章节视频与学习进度、M3 班级考试分配/续考/历史成绩、M4 考后 AI 诊断与逐题追问；共 208 文件 +17281 行。同日云端 `exam_system` 库补齐迁移：经查库确认 M1/M2 主脚本/M3 此前已执行，本轮补执行 `2026-11-24_m2_learning_video_sessions.sql` 与 `2026-11-24_m4_diagnostic_reports.sql`，31 张表就绪。部署 HTTP、真实 AI 链路与端到端验收待补，完整验收仍 0/7。
 
