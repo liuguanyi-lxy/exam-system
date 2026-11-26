@@ -100,6 +100,7 @@
           </el-tag>
           <span class="a-score">{{ a.score || 0 }} 分</span>
         </div>
+        <div class="a-question" v-if="titleOf(a)">{{ titleOf(a) }}</div>
         <!-- 手写代码题：答案按代码块展示，保留缩进 -->
         <template v-if="typeOf(a) === 'CODE'">
           <div class="a-code-block">
@@ -222,6 +223,11 @@ function findQuestion(a) {
 
 function typeOf(a) {
   return findQuestion(a)?.type || 'CHOICE'
+}
+
+// 答题详情展示题干，方便对照答案复盘
+function titleOf(a) {
+  return findQuestion(a)?.title || ''
 }
 
 function correctAnswer(a) {
@@ -646,6 +652,16 @@ onBeforeUnmount(() => {
     }
   }
 
+  .a-question {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--el-text-color-primary, #303133);
+    line-height: 1.6;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    background: var(--el-fill-color-light, #f5f7fa);
+    border-radius: 6px;
+  }
   .a-row {
     display: flex;
     gap: 10px;
