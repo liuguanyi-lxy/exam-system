@@ -15,20 +15,36 @@
 
 ## 2. 数据库初始化
 
-1. 创建数据库 `exam_system`（utf8mb4）。
-2. **全量建表脚本不在仓库中**——请从现有环境导出：`mysqldump -u<user> -p --no-data exam_system > schema.sql`，在新库执行。
-3. 按日期顺序执行 `exam-system-server/sql/` 下的增量脚本：
-   - `2026-09-29_unique_index_optimization.sql` —— 防并发重复开考/重复点赞的唯一索引
-   - `2026-11-15_exam_records_user_id.sql` —— 考试记录归属 user_id（含历史数据回填）
-   - `2026-11-15_videos_source_type.sql` —— 视频外部链接来源
-   - `2026-11-15_video_views_session.sql` —— 视频观看会话化统计
-   - `2026-11-15_wrong_questions_favorites.sql` —— 错题本与题目收藏所需表和索引
-   - `2026-11-16_learning_external_videos.sql` —— 学习类外链视频种子数据（可选，开发演示使用）
-   - `2026-11-21_m1_classes_knowledge.sql` —— M1 班级、成员、课程-班级占位关系与知识点表
-   - `2026-11-23_m2_courses_progress.sql` —— M2 课程、章节视频及个人学习进度表（依赖 M1）
-   - `2026-11-23_m3_exam_classes.sql` —— M3 考试分配、历史快照及活动记录唯一键（执行前核对同账号同卷活动记录预检）
-   - `2026-11-24_m2_learning_video_sessions.sql` —— M2 个人学习会话与心跳去重（依赖上一条）
-4. 增量 SQL **不可重复执行**。执行前先在目标库检查对应表/索引当前状态并备份；不确定现状时先停止核对，不要直接重跑脚本。
+**两条路径，二选一，不可混用**（M7 部署演练实测结论）：
+
+### 路径 A：全新库初始化（推荐，M7 演练验证过）
+
+1. 创建空库 `exam_system`（utf8mb4）。
+2. 执行**全量建表 schema**：从现有环境导出，`mysqldump -u<user> -p --no-data exam_system > schema.sql`，在空库执行。该 schema 已包含下列全部增量脚本的最终结构。
+3. 按需执行**数据类脚本**（含 INSERT 的种子数据）：
+   - `2026-11-16_learning_external_videos.sql` —— 学习类外链视频种子（可选，演示用）
+   - `2026-11-26_m7_demo_data.sql` —— M7 演示数据（演示班/账号/课程/试卷/考试，交付演示标准数据集）
+
+> ⚠️ 全量 schema 之后**不要再执行任何增量 DDL 脚本**——会报 `Duplicate column/table` 错误（结构已存在）。增量脚本只用于路径 B。
+
+### 路径 B：存量旧版本库升级
+
+增量 SQL（`exam-system-server/sql/`）按日期顺序执行，**不可重复执行**，执行前先查目标库当前状态：
+
+- `2026-09-29_unique_index_optimization.sql` —— 防并发重复开考/重复点赞的唯一索引
+- `2026-11-15_exam_records_user_id.sql` —— 考试记录归属 user_id（含历史数据回填）
+- `2026-11-15_videos_source_type.sql` —— 视频外部链接来源
+- `2026-11-15_video_views_session.sql` —— 视频观看会话化统计
+- `2026-11-15_wrong_questions_favorites.sql` —— 错题本与题目收藏所需表和索引
+- `2026-11-16_learning_external_videos.sql` —— 学习类外链视频种子数据（可选，开发演示使用）
+- `2026-11-21_m1_classes_knowledge.sql` —— M1 班级、成员、课程-班级占位关系与知识点表
+- `2026-11-23_m2_courses_progress.sql` —— M2 课程、章节视频及个人学习进度表（依赖 M1）
+- `2026-11-23_m3_exam_classes.sql` —— M3 考试分配、历史快照及活动记录唯一键（执行前核对同账号同卷活动记录预检）
+- `2026-11-24_m2_learning_video_sessions.sql` —— M2 个人学习会话与心跳去重（依赖上一条）
+- `2026-11-24_m4_diagnostic_reports.sql` —— M4 整卷诊断报告与逐题追问记录表
+- `2026-11-25_m5_remediation.sql` —— M5 补课任务链、任务项与知识点-视频映射表
+
+不确定现状时先停止核对，不要直接重跑脚本。
 
 ## 3. 后端部署
 
@@ -41,7 +57,7 @@
 
 | 变量 | 说明 |
 | --- | --- |
-| `DB_HOST` / `DB_USERNAME` / `DB_PASSWORD` | MySQL 连接 |
+| `DB_HOST` / `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` | MySQL 连接（库名默认 exam_system） |
 | `REDIS_HOST` / `REDIS_PASSWORD` | Redis 连接 |
 | `MINIO_ENDPOINT` / `MINIO_USERNAME` / `MINIO_PASSWORD` | MinIO 连接 |
 | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | AI 服务（见 application.yaml 内注释） |
@@ -58,7 +74,13 @@ mvn clean package -DskipTests
 java -jar target/exam-system-server-0.0.1-SNAPSHOT.war --server.port=8080
 ```
 
-启动后验证：`http://<host>:8080/api/stats/test` 返回 JSON 即正常（开发环境另可访问 `/doc.html` 看接口文档）。
+> ⚠️ **M7 演练发现的打包陷阱**：`src/main/resources/application-local.yaml`（gitignored）会被 `mvn package` 一并打进 war。如果它存在，且未显式指定 profile，启动会用 `local` profile 的硬编码数据源，**绕过全部环境变量**。生产部署二选一：
+> - 打包前把 `application-local.yaml` 移出 `src/main/resources/`；
+> - 启动时显式 `--spring.profiles.active=default` 并注入下表环境变量（库名可用 `DB_NAME` 覆盖）。
+>
+> 另注意 `DB_HOST` 默认值是 `localhost`——连远程 MySQL 必须显式传入，否则报 `Access denied for 'root'@'localhost'`。
+
+启动后验证：`http://<host>:8080/api/stats/test` 返回 JSON 即正常（开发环境另可访问 `/doc.html` 看接口文档）。`JWT_SECRET` 未配置或不足 32 字符将**拒绝启动**（设计如此）。
 
 ## 4. 前端构建与发布
 
@@ -100,3 +122,34 @@ server {
 - [ ] MinIO 桶可写（首次上传会自动建桶并设置公共读）
 - [ ] 视频外链功能上线前确认目标平台（B 站 / YouTube）的内嵌播放未被网络策略拦截
 - [ ] AI 判卷依赖外部服务，评分结果仅供学习参考，成绩复核需人工确认
+
+## 6. 备份与恢复
+
+### 6.1 MySQL
+
+```bash
+# 全量备份（含数据与结构）
+mysqldump -u<user> -p --single-transaction --default-character-set=utf8mb4 exam_system > backup_$(date +%F).sql
+
+# 恢复到新库
+mysql -u<user> -p -e "create database if not exists exam_system default charset utf8mb4"
+mysql -u<user> -p exam_system < backup_2026-11-26.sql
+```
+
+- 恢复后核对：表数量（36 张）、`users` 角色分布、最新 `exam_records` 日期。
+- 有 binlog 的环境可加做增量恢复；演示环境全量日备足够。
+
+### 6.2 MinIO（视频与图片文件）
+
+- 数据目录备份：MinIO 的数据盘目录整体快照/复制（桶名见上传配置，首桶自动创建）。
+- 只备份数据库不备份 MinIO 会导致课件视频链接失效——两者必须同窗口备份。
+
+## 7. M7 新机器部署演练记录（2026-11-26，本机模拟）
+
+按路径 A 在空库 `exam_system_demo` 完整走通：建库 → schema 导出 → 数据脚本 → `mvn clean package` → war 启动（`--spring.profiles.active=default` + 环境变量）→ 三角色 API 冒烟全过（学员考试交卷自动判卷 100 分、教师教学统计与班级对比、管理员班级列表）。
+
+演练踩坑（均已回写上文）：
+1. 全量 schema 之后执行增量 DDL 全部 Duplicate → 确立路径 A/B 二分流程。
+2. war 打包把 gitignored 的 application-local.yaml 带进去且默认激活 local profile → 绕过环境变量连到主库；生产必须显式 profile 或移除 local.yaml。
+3. `DB_HOST` 缺省 localhost 导致 `Access denied for 'root'@'localhost'` → 文档强调必传。
+4. `JWT_SECRET` 缺失拒绝启动（符合安全基线）；登录失败限流按账号+IP 记 Redis，冒烟脚本注意不要触发。

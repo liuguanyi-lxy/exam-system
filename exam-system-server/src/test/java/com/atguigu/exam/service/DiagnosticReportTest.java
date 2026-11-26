@@ -116,6 +116,20 @@ class DiagnosticReportTest {
     }
 
     @Test
+    void retryRequeuesReportAndUnsubmittedRecordIsRejected() {
+        // M7 A3：判卷/生成失败后教师或本人可重新入队；未交卷记录不允许触发
+        var record = graded(6);
+        when(records.selectById(1)).thenReturn(record);
+        when(reports.get(1)).thenReturn(new DiagnosticReportMapper.Row("PENDING", null, null, null, null));
+        assertEquals("PENDING", service.retry(1, 11L, "STUDENT").status());
+        verify(reports).retry(1);
+        record.setStatus(ExamStatus.IN_PROGRESS);
+        // 与 get 口径一致：未交卷记录触发报告操作按参数错误拒绝
+        assertThrows(IllegalArgumentException.class, () -> service.retry(1, 11L, "STUDENT"));
+        verify(reports).retry(1); // 仍只有第一次入队
+    }
+
+    @Test
     void weakPointsWithPublishedMappingsGetVideoSuggestionsWhileOthersFallBackToText() {
         var graded = graded(2);
         var tags = List.of(new Tag(1, 5, "基础"), new Tag(2, 6, "专题"));

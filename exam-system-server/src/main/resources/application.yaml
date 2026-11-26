@@ -23,7 +23,7 @@ spring:
   # 数据源配置
   datasource:
     type: com.zaxxer.hikari.HikariDataSource  # 使用HikariCP作为数据源实现
-    url: jdbc:mysql://${DB_HOST:localhost}:3306/exam_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8  # 数据库连接URL
+    url: jdbc:mysql://${DB_HOST:localhost}:3306/${DB_NAME:exam_system}?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8  # 数据库连接URL（库名可由 DB_NAME 覆盖，演练/多环境用）
     username: ${DB_USERNAME:root}  # 数据库用户名
     password: ${DB_PASSWORD:}  # 数据库密码，实际密码在 application-local.yaml 覆盖
     # Hikari连接池配置
